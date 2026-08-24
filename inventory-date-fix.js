@@ -1,13 +1,25 @@
 // 强制库存操作把用户选择的日期直接写入 inventory_logs.operation_date。
+// 同时重新绑定“保存/确认”按钮，避免旧事件处理器继续使用实际操作当天。
 (function(){
   let installed=false;
+
   function wait(){
-    if(typeof sb==='undefined'||typeof items==='undefined'||typeof saveStock!=='function'||typeof saveItem!=='function'||typeof fridge!=='function'||typeof warehouse!=='function'||typeof userEmail!=='function'){
+    if(typeof sb==='undefined'||typeof items==='undefined'||typeof saveStock!=='function'||typeof saveItem!=='function'||typeof fridge!=='function'||typeof warehouse!=='function'||typeof userEmail!=='function'||typeof loadAll!=='function'){
       setTimeout(wait,120);return;
     }
     install();
   }
+
   function selected(id){return document.getElementById(id)?.value||'';}
+
+  function replaceButton(id,handler){
+    const old=document.getElementById(id);
+    if(!old)return;
+    const fresh=old.cloneNode(true);
+    old.replaceWith(fresh);
+    fresh.onclick=handler;
+  }
+
   function install(){
     if(installed)return;installed=true;
 
@@ -15,10 +27,12 @@
       const x=items.find(i=>i.id===stockItemId);if(!x)return;
       const date=selected('stockOperationDate');
       if(!date)return alert('请选择日期');
+
       const action=document.getElementById('stockAction').value;
       const loc=document.getElementById('stockLocation').value;
       const qty=Number(document.getElementById('stockQty').value);
       if(!Number.isFinite(qty)||qty<0)return alert('请输入正确数量');
+
       const current=loc==='fridge'?fridge(x):warehouse(x);
       let next=current;
       if(action==='IN')next+=qty;
@@ -27,9 +41,14 @@
         next-=qty;
       }
       if(action==='ADJUST')next=qty;
-      const update=loc==='fridge'?{fridge_quantity:next,updated_at:new Date().toISOString()}:{warehouse_quantity:next,updated_at:new Date().toISOString()};
+
+      const update=loc==='fridge'
+        ?{fridge_quantity:next,updated_at:new Date().toISOString()}
+        :{warehouse_quantity:next,updated_at:new Date().toISOString()};
+
       const u=await sb.from('inventory_items').update(update).eq('id',x.id);
       if(u.error)return alert('库存更新失败：'+u.error.message);
+
       const locationName=loc==='fridge'?'冰箱':'仓库';
       const note=(document.getElementById('stockNote').value||'').trim();
       const l=await sb.from('inventory_logs').insert({
@@ -41,10 +60,12 @@
         user_email:userEmail(),
         operation_date:date
       });
+
       if(l.error){
         alert('库存已更新，但日期记录失败：'+l.error.message+'。请确认已运行 operation-date-upgrade.sql。');
         return;
       }
+
       document.getElementById('stockDialog').close();
       await loadAll();
     };
@@ -52,6 +73,7 @@
     saveItem=async function(){
       const date=selected('itemOperationDate');
       if(!date)return alert('请选择日期');
+
       const fq=Number(document.getElementById('itemFridgeQty').value||0);
       const wq=Number(document.getElementById('itemWarehouseQty').value||0);
       const p={
@@ -67,10 +89,15 @@
         commission_per_unit:Number(document.getElementById('itemCommission').value||0),
         updated_at:new Date().toISOString()
       };
+
       if(!p.name)return alert('请输入名称');
       const isEdit=!!editingId;
-      const r=isEdit?await sb.from('inventory_items').update(p).eq('id',editingId).select().single():await sb.from('inventory_items').insert(p).select().single();
+      const r=isEdit
+        ?await sb.from('inventory_items').update(p).eq('id',editingId).select().single()
+        :await sb.from('inventory_items').insert(p).select().single();
+
       if(r.error)return alert('保存失败：'+r.error.message);
+
       const l=await sb.from('inventory_logs').insert({
         item_id:r.data.id,
         item_name:r.data.name,
@@ -80,10 +107,21 @@
         user_email:userEmail(),
         operation_date:date
       });
-      if(l.error)alert('资料已保存，但日期记录失败：'+l.error.message);
+
+      if(l.error){
+        alert('资料已保存，但日期记录失败：'+l.error.message);
+        return;
+      }
+
       document.getElementById('itemDialog').close();
       await loadAll();
     };
+
+    // 关键修复：旧版 app.js 已经提前绑定过按钮事件。
+    // 替换按钮可以清除旧监听器，确保只执行上面的新版保存逻辑。
+    replaceButton('saveStockBtn',()=>saveStock());
+    replaceButton('saveItemBtn',()=>saveItem());
   }
+
   wait();
 })();

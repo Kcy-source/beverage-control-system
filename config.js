@@ -58,3 +58,9 @@ const dashboardCategoryScript = document.createElement("script");
 dashboardCategoryScript.src = "./dashboard-category.js";
 dashboardCategoryScript.defer = true;
 document.head.appendChild(dashboardCategoryScript);
+
+// 账号目录 + Admin/User 权限
+const accountDirectoryScript = document.createElement("script");
+accountDirectoryScript.src = "./account-directory.js";
+accountDirectoryScript.defer = true;
+document.head.appendChild(accountDirectoryScript);

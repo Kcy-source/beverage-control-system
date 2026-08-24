@@ -23,6 +23,12 @@ operationDateScript.src = "./operation-date.js";
 operationDateScript.defer = true;
 document.head.appendChild(operationDateScript);
 
+// 强制库存日志使用用户选择的日期
+const inventoryDateFixScript = document.createElement("script");
+inventoryDateFixScript.src = "./inventory-date-fix.js";
+inventoryDateFixScript.defer = true;
+document.head.appendChild(inventoryDateFixScript);
+
 // 工作台显示所有已录入饮料
 const dashboardProductsScript = document.createElement("script");
 dashboardProductsScript.src = "./dashboard-products.js";

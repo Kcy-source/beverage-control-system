@@ -1,5 +1,6 @@
 -- 账号目录 + Admin/User 权限 + 停用/启用
--- User 可管理库存与提成；Admin 额外管理账号与产品类别。
+-- User 可管理库存与提成、删除单条库存记录，但不能删除整个饮料品项。
+-- Admin 额外管理账号、产品类别，并可删除整个饮料。
 -- Supabase > SQL Editor > New query > 粘贴整段 > Run
 
 create table if not exists public.app_accounts (
@@ -14,60 +15,41 @@ alter table public.app_accounts add column if not exists role text not null defa
 alter table public.app_accounts add column if not exists is_active boolean not null default true;
 alter table public.app_accounts drop constraint if exists app_accounts_role_check;
 alter table public.app_accounts add constraint app_accounts_role_check check (role in ('admin','user'));
-
 create or replace function public.current_app_role() returns text language sql stable security definer set search_path=public as $$ select coalesce((select role from public.app_accounts where lower(email)=lower(auth.jwt()->>'email') and is_active=true limit 1),'user'); $$;
 create or replace function public.is_app_admin() returns boolean language sql stable security definer set search_path=public as $$ select public.current_app_role()='admin' and exists(select 1 from public.app_accounts where lower(email)=lower(auth.jwt()->>'email') and is_active=true); $$;
 create or replace function public.is_app_active() returns boolean language sql stable security definer set search_path=public as $$ select exists(select 1 from public.app_accounts where lower(email)=lower(auth.jwt()->>'email') and is_active=true); $$;
 
 alter table public.app_accounts enable row level security;
-drop policy if exists "authenticated can read app accounts" on public.app_accounts;
-drop policy if exists "authenticated can add app accounts" on public.app_accounts;
-drop policy if exists "admin can read app accounts" on public.app_accounts;
-drop policy if exists "admin can add app accounts" on public.app_accounts;
-drop policy if exists "admin can update app accounts" on public.app_accounts;
-drop policy if exists "admin can delete app accounts" on public.app_accounts;
-drop policy if exists "user can read own app account" on public.app_accounts;
+drop policy if exists "authenticated can read app accounts" on public.app_accounts; drop policy if exists "authenticated can add app accounts" on public.app_accounts; drop policy if exists "admin can read app accounts" on public.app_accounts; drop policy if exists "admin can add app accounts" on public.app_accounts; drop policy if exists "admin can update app accounts" on public.app_accounts; drop policy if exists "admin can delete app accounts" on public.app_accounts; drop policy if exists "user can read own app account" on public.app_accounts;
 create policy "admin can read app accounts" on public.app_accounts for select to authenticated using (public.is_app_admin());
 create policy "user can read own app account" on public.app_accounts for select to authenticated using (lower(email)=lower(auth.jwt()->>'email'));
 create policy "admin can add app accounts" on public.app_accounts for insert to authenticated with check (public.is_app_admin() or (not exists(select 1 from public.app_accounts) and lower(email)=lower(auth.jwt()->>'email') and role='admin'));
 create policy "admin can update app accounts" on public.app_accounts for update to authenticated using (public.is_app_admin()) with check (public.is_app_admin());
 create policy "admin can delete app accounts" on public.app_accounts for delete to authenticated using (public.is_app_admin());
-create index if not exists app_accounts_email_idx on public.app_accounts(email);
 
 alter table public.product_categories enable row level security;
-drop policy if exists "authenticated can read categories" on public.product_categories;
-drop policy if exists "authenticated can add categories" on public.product_categories;
-drop policy if exists "authenticated can delete categories" on public.product_categories;
-drop policy if exists "admin can add categories" on public.product_categories;
-drop policy if exists "admin can delete categories" on public.product_categories;
+drop policy if exists "authenticated can read categories" on public.product_categories; drop policy if exists "authenticated can add categories" on public.product_categories; drop policy if exists "authenticated can delete categories" on public.product_categories; drop policy if exists "admin can add categories" on public.product_categories; drop policy if exists "admin can delete categories" on public.product_categories;
 create policy "authenticated can read categories" on public.product_categories for select to authenticated using (public.is_app_active());
 create policy "admin can add categories" on public.product_categories for insert to authenticated with check (public.is_app_admin());
 create policy "admin can delete categories" on public.product_categories for delete to authenticated using (public.is_app_admin());
 
+-- 饮料品项：User 可新增/编辑及调整库存，但只有 Admin 能删除整个品项。
 alter table public.inventory_items enable row level security;
-drop policy if exists "authenticated can write inventory" on public.inventory_items;
-drop policy if exists "authenticated can read inventory" on public.inventory_items;
-drop policy if exists "authenticated can insert inventory" on public.inventory_items;
-drop policy if exists "authenticated can update inventory" on public.inventory_items;
-drop policy if exists "authenticated can delete inventory" on public.inventory_items;
-drop policy if exists "admin can insert inventory" on public.inventory_items;
-drop policy if exists "admin can delete inventory" on public.inventory_items;
+drop policy if exists "authenticated can write inventory" on public.inventory_items; drop policy if exists "authenticated can read inventory" on public.inventory_items; drop policy if exists "authenticated can insert inventory" on public.inventory_items; drop policy if exists "authenticated can update inventory" on public.inventory_items; drop policy if exists "authenticated can delete inventory" on public.inventory_items; drop policy if exists "admin can insert inventory" on public.inventory_items; drop policy if exists "admin can delete inventory" on public.inventory_items;
 create policy "authenticated can read inventory" on public.inventory_items for select to authenticated using (public.is_app_active());
 create policy "authenticated can insert inventory" on public.inventory_items for insert to authenticated with check (public.is_app_active());
 create policy "authenticated can update inventory" on public.inventory_items for update to authenticated using (public.is_app_active()) with check (public.is_app_active());
-create policy "authenticated can delete inventory" on public.inventory_items for delete to authenticated using (public.is_app_active());
+create policy "admin can delete inventory" on public.inventory_items for delete to authenticated using (public.is_app_admin());
 
+-- 单条库存操作记录：Admin/User 都可删除 Key 错的单条记录。
 alter table public.inventory_logs enable row level security;
-drop policy if exists "authenticated can read logs" on public.inventory_logs;
-drop policy if exists "authenticated can insert logs" on public.inventory_logs;
+drop policy if exists "authenticated can read logs" on public.inventory_logs; drop policy if exists "authenticated can insert logs" on public.inventory_logs; drop policy if exists "authenticated can delete logs" on public.inventory_logs;
 create policy "authenticated can read logs" on public.inventory_logs for select to authenticated using (public.is_app_active());
 create policy "authenticated can insert logs" on public.inventory_logs for insert to authenticated with check (public.is_app_active());
+create policy "authenticated can delete logs" on public.inventory_logs for delete to authenticated using (public.is_app_active());
 
 alter table public.commission_logs enable row level security;
-drop policy if exists "authenticated can read commissions" on public.commission_logs;
-drop policy if exists "authenticated can insert commissions" on public.commission_logs;
-drop policy if exists "authenticated can delete commissions" on public.commission_logs;
-drop policy if exists "admin can delete commissions" on public.commission_logs;
+drop policy if exists "authenticated can read commissions" on public.commission_logs; drop policy if exists "authenticated can insert commissions" on public.commission_logs; drop policy if exists "authenticated can delete commissions" on public.commission_logs; drop policy if exists "admin can delete commissions" on public.commission_logs;
 create policy "authenticated can read commissions" on public.commission_logs for select to authenticated using (public.is_app_active());
 create policy "authenticated can insert commissions" on public.commission_logs for insert to authenticated with check (public.is_app_active());
 create policy "authenticated can delete commissions" on public.commission_logs for delete to authenticated using (public.is_app_active());

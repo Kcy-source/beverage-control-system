@@ -1,122 +1,17 @@
-const cfg = window.APP_CONFIG;
-const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-
-let items = [], logs = [], editingId = null, stockItemId = null, realtimeChannel = null;
-const $ = id => document.getElementById(id);
-
-function esc(v=""){return String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
-function fmt(v){return new Date(v).toLocaleString("zh-SG",{timeZone:"Asia/Singapore",hour12:false})}
-function daySG(v){return new Date(v).toLocaleDateString("en-CA",{timeZone:"Asia/Singapore"})}
-function todaySG(){return new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Singapore"})}
-function userEmail(){return $("userEmail").textContent || ""}
-
-async function start(){
-  if(cfg.SUPABASE_URL.includes("PASTE_")) {
-    $("loginMsg").textContent="请先在 config.js 填入 Supabase URL 和 anon key。";
-    return;
-  }
-  const {data:{session}}=await sb.auth.getSession();
-  session ? await showApp(session.user) : showLogin();
-  sb.auth.onAuthStateChange(async(_,session)=>session ? await showApp(session.user) : showLogin());
-}
-function showLogin(){
-  $("loginView").classList.remove("hidden");$("appView").classList.add("hidden");$("logoutBtn").classList.add("hidden");$("userEmail").textContent="";
-}
-async function showApp(user){
-  $("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("logoutBtn").classList.remove("hidden");$("userEmail").textContent=user.email||"";
-  await loadAll(); subscribeRealtime();
-}
-async function login(){
-  $("loginMsg").textContent="登录中...";
-  const {error}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});
-  $("loginMsg").textContent=error?error.message:"";
-}
-async function logout(){await sb.auth.signOut()}
-
-async function loadAll(){
-  const [a,b]=await Promise.all([
-    sb.from("inventory_items").select("*").order("name"),
-    sb.from("inventory_logs").select("*").order("created_at",{ascending:false}).limit(80)
-  ]);
-  if(a.error){alert("读取库存失败："+a.error.message);return}
-  items=a.data||[]; logs=b.data||[]; render();
-}
-function render(){
-  const q=$("search").value.trim().toLowerCase(), cat=$("categoryFilter").value;
-  const shown=items.filter(x=>(!cat||x.category===cat)&&[x.name,x.category,x.spec,x.unit].join(" ").toLowerCase().includes(q));
-  $("inventoryBody").innerHTML=shown.map(x=>{
-    const low=Number(x.quantity)<=Number(x.min_quantity);
-    return `<tr>
-      <td><b>${esc(x.name)}</b></td><td><span class="pill">${esc(x.category)}</span></td>
-      <td>${esc(x.spec||"")}</td><td>${esc(x.unit)}</td><td class="${low?"low":"ok"}">${Number(x.quantity)}</td>
-      <td>${Number(x.min_quantity)}</td><td>$${Number(x.cost_price||0).toFixed(2)}</td>
-      <td class="${low?"low":"ok"}">${low?"低库存":"正常"}</td>
-      <td class="actions">
-        <button class="green" onclick="openStock('${x.id}','IN')">入库</button>
-        <button onclick="openStock('${x.id}','OUT')">出库</button>
-        <button class="secondary" onclick="editItem('${x.id}')">编辑</button>
-      </td></tr>`}).join("")||`<tr><td colspan="9" style="color:#6b7280">暂无数据</td></tr>`;
-
-  $("logBody").innerHTML=logs.map(x=>`<tr><td>${fmt(x.created_at)}</td><td>${esc(x.item_name)}</td>
-    <td>${({IN:"入库",OUT:"出库",ADJUST:"盘点",CREATE:"新增",EDIT:"编辑"}[x.action]||x.action)}</td>
-    <td>${Number(x.quantity||0)}</td><td>${esc(x.note||"")}</td><td>${esc(x.user_email||"")}</td></tr>`).join("")||
-    `<tr><td colspan="6" style="color:#6b7280">暂无记录</td></tr>`;
-
-  $("statItems").textContent=items.length;
-  $("statQty").textContent=items.reduce((s,x)=>s+Number(x.quantity||0),0).toFixed(0);
-  $("statLow").textContent=items.filter(x=>Number(x.quantity)<=Number(x.min_quantity)).length;
-  $("statToday").textContent=logs.filter(x=>daySG(x.created_at)===todaySG()).length;
-  $("updatedAt").textContent="更新："+new Date().toLocaleTimeString("zh-SG",{hour12:false});
-
-  const current=$("categoryFilter").value;
-  const cats=[...new Set(items.map(x=>x.category).filter(Boolean))].sort();
-  $("categoryFilter").innerHTML=`<option value="">全部类别</option>`+cats.map(c=>`<option>${esc(c)}</option>`).join("");
-  $("categoryFilter").value=current;
-}
-function newItem(){
-  editingId=null;$("itemTitle").textContent="新增酒水";$("itemName").value="";$("itemCategory").value="啤酒";
-  $("itemSpec").value="";$("itemUnit").value="瓶";$("itemQty").value=0;$("itemMin").value=5;$("itemCost").value=0;itemDialog.showModal();
-}
-function editItem(id){
-  const x=items.find(i=>i.id===id);if(!x)return;editingId=id;$("itemTitle").textContent="编辑酒水";
-  $("itemName").value=x.name;$("itemCategory").value=x.category;$("itemSpec").value=x.spec||"";$("itemUnit").value=x.unit;
-  $("itemQty").value=x.quantity;$("itemMin").value=x.min_quantity;$("itemCost").value=x.cost_price||0;itemDialog.showModal();
-}
-async function saveItem(){
-  const p={name:$("itemName").value.trim(),category:$("itemCategory").value,spec:$("itemSpec").value.trim(),
-    unit:$("itemUnit").value.trim()||"瓶",quantity:Number($("itemQty").value||0),min_quantity:Number($("itemMin").value||0),
-    cost_price:Number($("itemCost").value||0),updated_at:new Date().toISOString()};
-  if(!p.name)return alert("请输入名称");
-  let r=editingId?await sb.from("inventory_items").update(p).eq("id",editingId).select().single():await sb.from("inventory_items").insert(p).select().single();
-  if(r.error)return alert(r.error.message);
-  await sb.from("inventory_logs").insert({item_id:r.data.id,item_name:r.data.name,action:editingId?"EDIT":"CREATE",quantity:r.data.quantity,note:editingId?"编辑资料":"新增酒水",user_email:userEmail()});
-  itemDialog.close();await loadAll();
-}
-function openStock(id,action){
-  const x=items.find(i=>i.id===id);if(!x)return;stockItemId=id;$("stockTitle").textContent=x.name+" · 库存操作";
-  $("stockAction").value=action;$("stockQty").value="";$("stockNote").value="";stockDialog.showModal();
-}
-async function saveStock(){
-  const x=items.find(i=>i.id===stockItemId);if(!x)return;
-  const action=$("stockAction").value, qty=Number($("stockQty").value);
-  if(!Number.isFinite(qty)||qty<0)return alert("请输入正确数量");
-  let next=Number(x.quantity);
-  if(action==="IN")next+=qty;
-  if(action==="OUT"){if(qty>next)return alert("出库数量不能大于当前库存");next-=qty}
-  if(action==="ADJUST")next=qty;
-  const u=await sb.from("inventory_items").update({quantity:next,updated_at:new Date().toISOString()}).eq("id",x.id);
-  if(u.error)return alert(u.error.message);
-  await sb.from("inventory_logs").insert({item_id:x.id,item_name:x.name,action,quantity:qty,note:$("stockNote").value.trim(),user_email:userEmail()});
-  stockDialog.close();await loadAll();
-}
-function subscribeRealtime(){
-  if(realtimeChannel)sb.removeChannel(realtimeChannel);
-  realtimeChannel=sb.channel("inventory-live")
-    .on("postgres_changes",{event:"*",schema:"public",table:"inventory_items"},()=>loadAll())
-    .on("postgres_changes",{event:"*",schema:"public",table:"inventory_logs"},()=>loadAll())
-    .subscribe();
-}
-
-$("loginBtn").onclick=login;$("logoutBtn").onclick=logout;$("addBtn").onclick=newItem;$("refreshBtn").onclick=loadAll;
-$("saveItemBtn").onclick=saveItem;$("saveStockBtn").onclick=saveStock;$("search").oninput=render;$("categoryFilter").onchange=render;
-start();
+const cfg=window.APP_CONFIG;const sb=supabase.createClient(cfg.SUPABASE_URL,cfg.SUPABASE_ANON_KEY);
+let items=[],logs=[],commissions=[],editingId=null,stockItemId=null,realtimeChannel=null;const $=id=>document.getElementById(id);
+function esc(v=""){return String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}function fmt(v){return new Date(v).toLocaleString("zh-SG",{timeZone:"Asia/Singapore",hour12:false})}function daySG(v){return new Date(v).toLocaleDateString("en-CA",{timeZone:"Asia/Singapore"})}function todaySG(){return new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Singapore"})}function userEmail(){return $("userEmail").textContent||""}
+async function start(){if(cfg.SUPABASE_URL.includes("PASTE_")){ $("loginMsg").textContent="请先在 config.js 填入 Supabase URL 和 key。";return}const{data:{session}}=await sb.auth.getSession();session?await showApp(session.user):showLogin();sb.auth.onAuthStateChange(async(_,s)=>s?await showApp(s.user):showLogin())}
+function showLogin(){$("loginView").classList.remove("hidden");$("appView").classList.add("hidden");$("logoutBtn").classList.add("hidden");$("userEmail").textContent=""}async function showApp(user){$("loginView").classList.add("hidden");$("appView").classList.remove("hidden");$("logoutBtn").classList.remove("hidden");$("userEmail").textContent=user.email||"";await loadAll();subscribeRealtime()}async function login(){$("loginMsg").textContent="登录中...";const{error}=await sb.auth.signInWithPassword({email:$("email").value.trim(),password:$("password").value});$("loginMsg").textContent=error?error.message:""}async function logout(){await sb.auth.signOut()}
+async function loadAll(){const[a,b,c]=await Promise.all([sb.from("inventory_items").select("*").order("name"),sb.from("inventory_logs").select("*").order("created_at",{ascending:false}).limit(80),sb.from("commission_logs").select("*").order("created_at",{ascending:false}).limit(100)]);if(a.error){alert("读取库存失败："+a.error.message);return}if(c.error){alert("提成功能还没启用。请先运行新的 commission-upgrade.sql");return}items=a.data||[];logs=b.data||[];commissions=c.data||[];render()}
+function render(){const q=$("search").value.trim().toLowerCase(),cat=$("categoryFilter").value;const shown=items.filter(x=>(!cat||x.category===cat)&&[x.name,x.category,x.spec,x.unit].join(" ").toLowerCase().includes(q));$("inventoryBody").innerHTML=shown.map(x=>{const low=Number(x.quantity)<=Number(x.min_quantity);return `<tr><td><b>${esc(x.name)}</b></td><td><span class="pill">${esc(x.category)}</span></td><td>${esc(x.spec||"")}</td><td>${esc(x.unit)}</td><td class="${low?"low":"ok"}">${Number(x.quantity)}</td><td>${Number(x.min_quantity)}</td><td>$${Number(x.cost_price||0).toFixed(2)}</td><td class="money">$${Number(x.commission_per_unit||0).toFixed(2)}</td><td class="${low?"low":"ok"}">${low?"低库存":"正常"}</td><td class="actions"><button class="green" onclick="openStock('${x.id}','IN')">入库</button><button onclick="openStock('${x.id}','OUT')">卖出</button><button class="secondary" onclick="editItem('${x.id}')">编辑</button></td></tr>`}).join("")||`<tr><td colspan="10">暂无数据</td></tr>`;
+$("logBody").innerHTML=logs.map(x=>`<tr><td>${fmt(x.created_at)}</td><td>${esc(x.item_name)}</td><td>${({IN:"入库",OUT:"卖出/出库",ADJUST:"盘点",CREATE:"新增",EDIT:"编辑"}[x.action]||x.action)}</td><td>${Number(x.quantity||0)}</td><td>${esc(x.note||"")}</td><td>${esc(x.user_email||"")}</td></tr>`).join("")||`<tr><td colspan="6">暂无记录</td></tr>`;
+$("commissionBody").innerHTML=commissions.map(x=>`<tr><td>${fmt(x.created_at)}</td><td><b>${esc(x.seller_name)}</b></td><td>${esc(x.item_name)}</td><td>${Number(x.quantity)}</td><td>$${Number(x.commission_per_unit).toFixed(2)}</td><td class="money">$${Number(x.commission_amount).toFixed(2)}</td><td>${esc(x.user_email||"")}</td></tr>`).join("")||`<tr><td colspan="7">暂无提成记录</td></tr>`;
+$("statItems").textContent=items.length;$("statQty").textContent=items.reduce((s,x)=>s+Number(x.quantity||0),0).toFixed(0);$("statLow").textContent=items.filter(x=>Number(x.quantity)<=Number(x.min_quantity)).length;$("statToday").textContent=logs.filter(x=>daySG(x.created_at)===todaySG()).length;$("statCommission").textContent="$"+commissions.filter(x=>daySG(x.created_at)===todaySG()).reduce((s,x)=>s+Number(x.commission_amount||0),0).toFixed(2);$("updatedAt").textContent="更新："+new Date().toLocaleTimeString("zh-SG",{hour12:false});const current=$("categoryFilter").value,cats=[...new Set(items.map(x=>x.category).filter(Boolean))].sort();$("categoryFilter").innerHTML=`<option value="">全部类别</option>`+cats.map(c=>`<option>${esc(c)}</option>`).join("");$("categoryFilter").value=current;const sellers=[...new Set(commissions.map(x=>x.seller_name).filter(Boolean))].sort();$("sellerList").innerHTML=sellers.map(s=>`<option value="${esc(s)}">`).join("")}
+function newItem(){editingId=null;$("itemTitle").textContent="新增酒水";$("itemName").value="";$("itemCategory").value="啤酒";$("itemSpec").value="";$("itemUnit").value="瓶";$("itemQty").value=0;$("itemMin").value=5;$("itemCost").value=0;$("itemCommission").value=0;itemDialog.showModal()}
+function editItem(id){const x=items.find(i=>i.id===id);if(!x)return;editingId=id;$("itemTitle").textContent="编辑酒水";$("itemName").value=x.name;$("itemCategory").value=x.category;$("itemSpec").value=x.spec||"";$("itemUnit").value=x.unit;$("itemQty").value=x.quantity;$("itemMin").value=x.min_quantity;$("itemCost").value=x.cost_price||0;$("itemCommission").value=x.commission_per_unit||0;itemDialog.showModal()}
+async function saveItem(){const p={name:$("itemName").value.trim(),category:$("itemCategory").value,spec:$("itemSpec").value.trim(),unit:$("itemUnit").value.trim()||"瓶",quantity:Number($("itemQty").value||0),min_quantity:Number($("itemMin").value||0),cost_price:Number($("itemCost").value||0),commission_per_unit:Number($("itemCommission").value||0),updated_at:new Date().toISOString()};if(!p.name)return alert("请输入名称");let r=editingId?await sb.from("inventory_items").update(p).eq("id",editingId).select().single():await sb.from("inventory_items").insert(p).select().single();if(r.error)return alert(r.error.message);await sb.from("inventory_logs").insert({item_id:r.data.id,item_name:r.data.name,action:editingId?"EDIT":"CREATE",quantity:r.data.quantity,note:editingId?"编辑资料":"新增酒水",user_email:userEmail()});itemDialog.close();await loadAll()}
+function toggleSeller(){const out=$("stockAction").value==="OUT";$("sellerWrap").classList.toggle("hidden",!out)}function openStock(id,action){const x=items.find(i=>i.id===id);if(!x)return;stockItemId=id;$("stockTitle").textContent=x.name+" · 库存操作";$("stockAction").value=action;$("stockQty").value="";$("stockSeller").value="";$("stockNote").value="";toggleSeller();stockDialog.showModal()}
+async function saveStock(){const x=items.find(i=>i.id===stockItemId);if(!x)return;const action=$("stockAction").value,qty=Number($("stockQty").value);if(!Number.isFinite(qty)||qty<=0)return alert("请输入大于 0 的数量");const seller=$("stockSeller").value.trim();if(action==="OUT"&&!seller)return alert("请输入销售员工姓名，才能记录提成");let next=Number(x.quantity);if(action==="IN")next+=qty;if(action==="OUT"){if(qty>next)return alert("卖出数量不能大于当前库存");next-=qty}if(action==="ADJUST")next=qty;const u=await sb.from("inventory_items").update({quantity:next,updated_at:new Date().toISOString()}).eq("id",x.id);if(u.error)return alert(u.error.message);const l=await sb.from("inventory_logs").insert({item_id:x.id,item_name:x.name,action,quantity:qty,note:$("stockNote").value.trim(),user_email:userEmail()});if(l.error)return alert(l.error.message);if(action==="OUT"){const rate=Number(x.commission_per_unit||0),amount=qty*rate;const c=await sb.from("commission_logs").insert({item_id:x.id,item_name:x.name,seller_name:seller,quantity:qty,commission_per_unit:rate,commission_amount:amount,user_email:userEmail()});if(c.error)return alert("库存已扣除，但提成记录失败："+c.error.message)}stockDialog.close();await loadAll()}
+function subscribeRealtime(){if(realtimeChannel)sb.removeChannel(realtimeChannel);realtimeChannel=sb.channel("inventory-live").on("postgres_changes",{event:"*",schema:"public",table:"inventory_items"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"inventory_logs"},()=>loadAll()).on("postgres_changes",{event:"*",schema:"public",table:"commission_logs"},()=>loadAll()).subscribe()}
+$("loginBtn").onclick=login;$("logoutBtn").onclick=logout;$("addBtn").onclick=newItem;$("refreshBtn").onclick=loadAll;$("saveItemBtn").onclick=saveItem;$("saveStockBtn").onclick=saveStock;$("stockAction").onchange=toggleSeller;$("search").oninput=render;$("categoryFilter").onchange=render;start();

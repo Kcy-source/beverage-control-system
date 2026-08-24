@@ -40,3 +40,9 @@ const manualCommissionScript = document.createElement("script");
 manualCommissionScript.src = "./manual-commission.js";
 manualCommissionScript.defer = true;
 document.head.appendChild(manualCommissionScript);
+
+// 精简菜单，并把管理设置独立出来
+const navigationCleanupScript = document.createElement("script");
+navigationCleanupScript.src = "./navigation-cleanup.js";
+navigationCleanupScript.defer = true;
+document.head.appendChild(navigationCleanupScript);

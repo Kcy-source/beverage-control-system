@@ -1,5 +1,5 @@
 -- 账号目录 + Admin/User 权限 + 停用/启用
--- User 可管理库存与提成、删除单条库存记录，但不能删除整个饮料品项。
+-- User 可管理库存与提成、撤销单条库存记录，但不能删除整个饮料品项。
 -- Admin 额外管理账号、产品类别，并可删除整个饮料。
 -- Supabase > SQL Editor > New query > 粘贴整段 > Run
 
@@ -41,12 +41,78 @@ create policy "authenticated can insert inventory" on public.inventory_items for
 create policy "authenticated can update inventory" on public.inventory_items for update to authenticated using (public.is_app_active()) with check (public.is_app_active());
 create policy "admin can delete inventory" on public.inventory_items for delete to authenticated using (public.is_app_admin());
 
--- 单条库存操作记录：Admin/User 都可删除 Key 错的单条记录。
+-- 库存操作记录。
 alter table public.inventory_logs enable row level security;
 drop policy if exists "authenticated can read logs" on public.inventory_logs; drop policy if exists "authenticated can insert logs" on public.inventory_logs; drop policy if exists "authenticated can delete logs" on public.inventory_logs;
 create policy "authenticated can read logs" on public.inventory_logs for select to authenticated using (public.is_app_active());
 create policy "authenticated can insert logs" on public.inventory_logs for insert to authenticated with check (public.is_app_active());
-create policy "authenticated can delete logs" on public.inventory_logs for delete to authenticated using (public.is_app_active());
+-- 不再直接开放 DELETE；统一通过 undo_inventory_log 撤销，确保库存一起改回。
+
+create or replace function public.undo_inventory_log(p_log_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  l public.inventory_logs%rowtype;
+  i public.inventory_items%rowtype;
+  q numeric;
+  new_f numeric;
+  new_w numeric;
+begin
+  if not public.is_app_active() then
+    raise exception '此账号已停用';
+  end if;
+
+  select * into l from public.inventory_logs where id=p_log_id for update;
+  if not found then raise exception '找不到这条库存记录'; end if;
+  if l.item_id is null then raise exception '这条记录对应的饮料已经不存在，无法自动恢复库存'; end if;
+
+  select * into i from public.inventory_items where id=l.item_id for update;
+  if not found then raise exception '找不到对应饮料，无法恢复库存'; end if;
+
+  q := coalesce(l.quantity,0);
+  new_f := coalesce(i.fridge_quantity,0);
+  new_w := coalesce(i.warehouse_quantity,0);
+
+  if l.action='OUT' then
+    if coalesce(l.note,'') like '冰箱｜%' then new_f := new_f + q;
+    elsif coalesce(l.note,'') like '仓库｜%' then new_w := new_w + q;
+    else raise exception '旧记录没有库存位置，无法自动恢复。请先手动盘点修正。';
+    end if;
+  elsif l.action='IN' then
+    if coalesce(l.note,'') like '冰箱｜%' then
+      if new_f < q then raise exception '当前冰箱库存不足以撤销这笔入库，请先检查后续记录'; end if;
+      new_f := new_f - q;
+    elsif coalesce(l.note,'') like '仓库｜%' then
+      if new_w < q then raise exception '当前仓库库存不足以撤销这笔入库，请先检查后续记录'; end if;
+      new_w := new_w - q;
+    else raise exception '旧记录没有库存位置，无法自动恢复。请先手动盘点修正。';
+    end if;
+  elsif l.action='TRANSFER' then
+    if coalesce(l.note,'') like '仓库 → 冰箱%' then
+      if new_f < q then raise exception '当前冰箱库存不足以撤销这笔移库'; end if;
+      new_f := new_f - q; new_w := new_w + q;
+    elsif coalesce(l.note,'') like '冰箱 → 仓库%' then
+      if new_w < q then raise exception '当前仓库库存不足以撤销这笔移库'; end if;
+      new_w := new_w - q; new_f := new_f + q;
+    else raise exception '无法识别这笔移库方向';
+    end if;
+  else
+    raise exception '盘点、新增、编辑记录不能自动撤销库存，请用盘点功能修正';
+  end if;
+
+  update public.inventory_items
+  set fridge_quantity=new_f, warehouse_quantity=new_w, quantity=new_f+new_w, updated_at=now()
+  where id=i.id;
+
+  delete from public.inventory_logs where id=p_log_id;
+  return jsonb_build_object('ok',true,'fridge_quantity',new_f,'warehouse_quantity',new_w,'total',new_f+new_w);
+end;
+$$;
+
+grant execute on function public.undo_inventory_log(bigint) to authenticated;
 
 alter table public.commission_logs enable row level security;
 drop policy if exists "authenticated can read commissions" on public.commission_logs; drop policy if exists "authenticated can insert commissions" on public.commission_logs; drop policy if exists "authenticated can delete commissions" on public.commission_logs; drop policy if exists "admin can delete commissions" on public.commission_logs;

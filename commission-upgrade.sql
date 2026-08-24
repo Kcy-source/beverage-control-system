@@ -18,7 +18,6 @@ create table if not exists public.commission_logs (
   created_at timestamptz not null default now()
 );
 
--- 兼容之前已经建立的 commission_logs 表
 alter table public.commission_logs
 add column if not exists operation_date date;
 
@@ -39,6 +38,7 @@ alter table public.commission_logs enable row level security;
 
 drop policy if exists "authenticated can read commissions" on public.commission_logs;
 drop policy if exists "authenticated can insert commissions" on public.commission_logs;
+drop policy if exists "authenticated can delete commissions" on public.commission_logs;
 
 create policy "authenticated can read commissions"
 on public.commission_logs for select
@@ -49,6 +49,11 @@ create policy "authenticated can insert commissions"
 on public.commission_logs for insert
 to authenticated
 with check (true);
+
+create policy "authenticated can delete commissions"
+on public.commission_logs for delete
+to authenticated
+using (true);
 
 create index if not exists commission_logs_operation_date_idx
 on public.commission_logs(operation_date desc);

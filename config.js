@@ -22,3 +22,9 @@ const dashboardProductsScript = document.createElement("script");
 dashboardProductsScript.src = "./dashboard-products.js";
 dashboardProductsScript.defer = true;
 document.head.appendChild(dashboardProductsScript);
+
+// 点开饮料显示该饮料的库存历史
+const productHistoryScript = document.createElement("script");
+productHistoryScript.src = "./product-history.js";
+productHistoryScript.defer = true;
+document.head.appendChild(productHistoryScript);

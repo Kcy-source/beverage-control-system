@@ -34,3 +34,9 @@ const productHistoryScript = document.createElement("script");
 productHistoryScript.src = "./product-history.js";
 productHistoryScript.defer = true;
 document.head.appendChild(productHistoryScript);
+
+// 员工销售与提成：改为手动录入
+const manualCommissionScript = document.createElement("script");
+manualCommissionScript.src = "./manual-commission.js";
+manualCommissionScript.defer = true;
+document.head.appendChild(manualCommissionScript);

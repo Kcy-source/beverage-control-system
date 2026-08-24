@@ -1,4 +1,5 @@
--- 提成功能升级：Supabase > SQL Editor > New query > 粘贴整段 > Run
+-- 员工销售与提成功能升级
+-- Supabase > SQL Editor > New query > 粘贴整段 > Run
 
 alter table public.inventory_items
 add column if not exists commission_per_unit numeric not null default 0 check (commission_per_unit >= 0);
@@ -11,9 +12,28 @@ create table if not exists public.commission_logs (
   quantity numeric not null check (quantity > 0),
   commission_per_unit numeric not null default 0 check (commission_per_unit >= 0),
   commission_amount numeric not null default 0 check (commission_amount >= 0),
+  operation_date date not null default (now() at time zone 'Asia/Singapore')::date,
+  note text not null default '',
   user_email text default '',
   created_at timestamptz not null default now()
 );
+
+-- 兼容之前已经建立的 commission_logs 表
+alter table public.commission_logs
+add column if not exists operation_date date;
+
+update public.commission_logs
+set operation_date = (created_at at time zone 'Asia/Singapore')::date
+where operation_date is null;
+
+alter table public.commission_logs
+alter column operation_date set default (now() at time zone 'Asia/Singapore')::date;
+
+alter table public.commission_logs
+alter column operation_date set not null;
+
+alter table public.commission_logs
+add column if not exists note text not null default '';
 
 alter table public.commission_logs enable row level security;
 
@@ -30,7 +50,15 @@ on public.commission_logs for insert
 to authenticated
 with check (true);
 
--- Realtime：如果已加入 publication，则忽略 duplicate_object 错误
+create index if not exists commission_logs_operation_date_idx
+on public.commission_logs(operation_date desc);
+
+create index if not exists commission_logs_seller_name_idx
+on public.commission_logs(seller_name);
+
+create index if not exists commission_logs_item_id_idx
+on public.commission_logs(item_id);
+
 do $$
 begin
   alter publication supabase_realtime add table public.commission_logs;

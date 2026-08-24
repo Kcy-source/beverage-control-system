@@ -154,7 +154,9 @@
     const log=await sb.from("inventory_logs").insert({
       item_id:x.id,item_name:x.name,action:"TRANSFER",quantity:qty,note:detail,user_email:userEmail()
     });
-    if(log.error) alert("移库已完成，但操作记录写入失败："+log.error.message);
+    if(log.error){
+      alert("移库已完成，但操作记录暂时无法写入。请在 Supabase 运行 transfer-log-upgrade.sql 后再试。");
+    }
 
     document.getElementById("transferDialog").close();
     await loadAll();

@@ -52,3 +52,9 @@ const navigationCleanupScript = document.createElement("script");
 navigationCleanupScript.src = "./navigation-cleanup.js";
 navigationCleanupScript.defer = true;
 document.head.appendChild(navigationCleanupScript);
+
+// 产品类别直接放到工作台
+const dashboardCategoryScript = document.createElement("script");
+dashboardCategoryScript.src = "./dashboard-category.js";
+dashboardCategoryScript.defer = true;
+document.head.appendChild(dashboardCategoryScript);

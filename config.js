@@ -10,3 +10,9 @@ const transferScript = document.createElement("script");
 transferScript.src = "./transfer.js";
 transferScript.defer = true;
 document.head.appendChild(transferScript);
+
+// 额外功能：每次操作选择业务日期
+const operationDateScript = document.createElement("script");
+operationDateScript.src = "./operation-date.js";
+operationDateScript.defer = true;
+document.head.appendChild(operationDateScript);

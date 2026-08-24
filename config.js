@@ -11,8 +11,14 @@ transferScript.src = "./transfer.js";
 transferScript.defer = true;
 document.head.appendChild(transferScript);
 
-// 额外功能：每次操作选择业务日期
+// 额外功能：每次操作选择日期
 const operationDateScript = document.createElement("script");
 operationDateScript.src = "./operation-date.js";
 operationDateScript.defer = true;
 document.head.appendChild(operationDateScript);
+
+// 工作台显示所有已录入饮料
+const dashboardProductsScript = document.createElement("script");
+dashboardProductsScript.src = "./dashboard-products.js";
+dashboardProductsScript.defer = true;
+document.head.appendChild(dashboardProductsScript);

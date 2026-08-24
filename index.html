@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>饮料酒水库存管理</title>
+  <link rel="stylesheet" href="./admin.css" />
   <style>
     :root{--bg:#f5f7fb;--card:#fff;--text:#172033;--muted:#6b7280;--line:#e5e7eb;--primary:#17324d;--green:#087f5b;--red:#c92a2a;--amber:#c47f00}
     *{box-sizing:border-box}body{margin:0;font-family:Arial,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
@@ -37,5 +38,5 @@
   <div class="drawer-actions"><button id="drawerInBtn" class="green">入库</button><button id="drawerOutBtn">卖出</button><button id="drawerEditBtn" class="secondary">编辑</button></div>
   <div class="danger-zone"><h3>删除错误酒水</h3><p>如果这条酒水资料是误加的，可以永久删除。以前的操作记录会保留，但这条酒水会从当前库存中消失。</p><button id="drawerDeleteBtn" class="red">删除这条酒水</button></div>
 </aside>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="./config.js"></script><script src="./app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="./config.js"></script><script src="./app.js"></script><script src="./admin-ui.js"></script>
 </body></html>

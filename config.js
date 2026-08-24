@@ -5,6 +5,12 @@ window.APP_CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_yHnU5ACbwLvpLt3h3OJpTw_Cd0OqiES"
 };
 
+// 饮料查看详情：居中并放大
+const centerViewStyle = document.createElement("link");
+centerViewStyle.rel = "stylesheet";
+centerViewStyle.href = "./center-view.css";
+document.head.appendChild(centerViewStyle);
+
 // 额外功能：仓库与冰箱之间移库
 const transferScript = document.createElement("script");
 transferScript.src = "./transfer.js";

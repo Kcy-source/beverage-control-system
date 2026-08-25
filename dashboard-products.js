@@ -1,18 +1,8 @@
-// 工作台显示所有已录入饮料及其冰箱/仓库/总库存。
+// 工作台显示所有饮料；表格可上下/左右滚动，并固定表头与名称列。
 (function(){
   function wait(){if(typeof render!=='function'||typeof items==='undefined'){setTimeout(wait,120);return;}install();}
-  function install(){
-    const dashboard=document.getElementById('dashboard');if(!dashboard)return;
-    if(!document.getElementById('dashboardProducts')){
-      const card=document.createElement('div');card.id='dashboardProducts';card.className='card tablewrap';card.style.marginTop='14px';card.innerHTML=`<div class="section-head"><h2>所有饮料</h2><span id="dashboardProductCount" style="font-size:12px;color:#6b7280"></span></div><table><thead><tr><th>名称</th><th>类别</th><th>规格</th><th>单位</th><th>冰箱</th><th>仓库</th><th>总库存</th><th>状态</th></tr></thead><tbody id="dashboardProductsBody"></tbody></table>`;dashboard.appendChild(card);
-    }
-    const oldRender=render;render=function(){oldRender();renderDashboardProducts();};
-    renderDashboardProducts();
-  }
-  function renderDashboardProducts(){
-    const body=document.getElementById('dashboardProductsBody');if(!body)return;
-    document.getElementById('dashboardProductCount').textContent=`共 ${items.length} 个品项`;
-    body.innerHTML=items.map(x=>{const f=Number(x.fridge_quantity||0),w=Number(x.warehouse_quantity||0),t=f+w,low=t<=Number(x.min_quantity||0);return `<tr><td><button class="linkbtn" onclick="openItemDrawer('${x.id}')">${esc(x.name)}</button></td><td><span class="pill">${esc(x.category||'')}</span></td><td>${esc(x.spec||'')}</td><td>${esc(x.unit||'')}</td><td>${f}</td><td>${w}</td><td class="${low?'low':'ok'}">${t}</td><td class="${low?'low':'ok'}">${low?'低库存':'正常'}</td></tr>`;}).join('')||'<tr><td colspan="8">暂无饮料</td></tr>';
-  }
+  function install(){const dashboard=document.getElementById('dashboard');if(!dashboard)return;if(!document.getElementById('dashboardProducts')){const card=document.createElement('div');card.id='dashboardProducts';card.className='card';card.style.marginTop='14px';card.innerHTML=`<div class="section-head"><h2>所有饮料</h2><span id="dashboardProductCount" style="font-size:12px;color:#6b7280"></span></div><div id="dashboardProductsScroll" class="tablewrap" style="max-height:55vh;overflow:auto;position:relative"><table><thead><tr><th>名称</th><th>类别</th><th>规格</th><th>单位</th><th>冰箱</th><th>仓库</th><th>总库存</th><th>状态</th></tr></thead><tbody id="dashboardProductsBody"></tbody></table></div>`;dashboard.appendChild(card);addStyle();}const oldRender=render;render=function(){oldRender();renderDashboardProducts();};renderDashboardProducts();}
+  function addStyle(){if(document.getElementById('dashboardStickyStyle'))return;const s=document.createElement('style');s.id='dashboardStickyStyle';s.textContent=`#dashboardProductsScroll table thead th{position:sticky;top:0;z-index:4;background:#fafbfc;box-shadow:0 1px 0 #e5e7eb}#dashboardProductsScroll table th:first-child,#dashboardProductsScroll table td:first-child{position:sticky;left:0;z-index:3;background:#fff;min-width:150px;box-shadow:1px 0 0 #e5e7eb}#dashboardProductsScroll table thead th:first-child{z-index:6;background:#fafbfc}`;document.head.appendChild(s);}
+  function renderDashboardProducts(){const body=document.getElementById('dashboardProductsBody');if(!body)return;document.getElementById('dashboardProductCount').textContent=`${items.length} 个品项`;body.innerHTML=items.map(x=>{const f=Number(x.fridge_quantity||0),w=Number(x.warehouse_quantity||0),t=f+w,low=t<=Number(x.min_quantity||0);return `<tr><td><button class="linkbtn" onclick="openItemDrawer('${x.id}')">${esc(x.name)}</button></td><td><span class="pill">${esc(x.category||'')}</span></td><td>${esc(x.spec||'')}</td><td>${esc(x.unit||'')}</td><td>${f}</td><td>${w}</td><td class="${low?'low':'ok'}">${t}</td><td class="${low?'low':'ok'}">${low?'低库存':'正常'}</td></tr>`;}).join('')||'<tr><td colspan="8">暂无饮料</td></tr>';}
   wait();
 })();

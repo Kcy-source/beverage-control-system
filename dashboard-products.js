@@ -5,7 +5,7 @@
   function addStyle(){if(document.getElementById('dashboardStickyStyle'))return;const s=document.createElement('style');s.id='dashboardStickyStyle';s.textContent=`
     #dashboardProducts{padding:0;overflow:hidden}
     #dashboardProducts>.section-head{padding:18px 20px 12px;margin:0;background:#fff}
-    #dashboardProductsScroll{max-height:55vh;overflow:auto;position:relative;padding:0 20px 14px;background:#fff}
+    #dashboardProductsScroll{height:70vh;max-height:70vh;overflow:auto;position:relative;padding:0 20px 14px;background:#fff;scrollbar-gutter:stable}
     #dashboardProductsScroll table{border-collapse:separate;border-spacing:0;width:100%;min-width:760px}
     #dashboardProductsScroll table thead{position:sticky;top:0;z-index:20}
     #dashboardProductsScroll table thead th{position:sticky;top:0;z-index:21;background:#f8fafc!important;color:#667085;font-weight:600;padding:14px 12px;border-bottom:1px solid #e5e7eb;box-shadow:none;white-space:nowrap}

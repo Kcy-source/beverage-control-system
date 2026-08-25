@@ -5,62 +5,25 @@ window.APP_CONFIG = {
   SUPABASE_ANON_KEY: "sb_publishable_yHnU5ACbwLvpLt3h3OJpTw_Cd0OqiES"
 };
 
-// 饮料查看详情：居中并放大
-const centerViewStyle = document.createElement("link");
-centerViewStyle.rel = "stylesheet";
-centerViewStyle.href = "./center-view.css";
+const centerViewStyle=document.createElement("link");
+centerViewStyle.rel="stylesheet";
+centerViewStyle.href="./center-view.css?v=20260825a";
 document.head.appendChild(centerViewStyle);
 
-// 额外功能：仓库与冰箱之间移库
-const transferScript = document.createElement("script");
-transferScript.src = "./transfer.js";
-transferScript.defer = true;
-document.head.appendChild(transferScript);
-
-// 额外功能：每次操作选择日期
-const operationDateScript = document.createElement("script");
-operationDateScript.src = "./operation-date.js";
-operationDateScript.defer = true;
-document.head.appendChild(operationDateScript);
-
-// 强制库存日志使用用户选择的日期
-const inventoryDateFixScript = document.createElement("script");
-inventoryDateFixScript.src = "./inventory-date-fix.js";
-inventoryDateFixScript.defer = true;
-document.head.appendChild(inventoryDateFixScript);
-
-// 工作台显示所有已录入饮料
-const dashboardProductsScript = document.createElement("script");
-dashboardProductsScript.src = "./dashboard-products.js";
-dashboardProductsScript.defer = true;
-document.head.appendChild(dashboardProductsScript);
-
-// 点开饮料显示该饮料的库存历史
-const productHistoryScript = document.createElement("script");
-productHistoryScript.src = "./product-history.js";
-productHistoryScript.defer = true;
-document.head.appendChild(productHistoryScript);
-
-// 员工销售与提成：改为手动录入
-const manualCommissionScript = document.createElement("script");
-manualCommissionScript.src = "./manual-commission.js";
-manualCommissionScript.defer = true;
-document.head.appendChild(manualCommissionScript);
-
-// 精简菜单，并把管理设置独立出来
-const navigationCleanupScript = document.createElement("script");
-navigationCleanupScript.src = "./navigation-cleanup.js";
-navigationCleanupScript.defer = true;
-document.head.appendChild(navigationCleanupScript);
-
-// 产品类别直接放到工作台
-const dashboardCategoryScript = document.createElement("script");
-dashboardCategoryScript.src = "./dashboard-category.js";
-dashboardCategoryScript.defer = true;
-document.head.appendChild(dashboardCategoryScript);
-
-// 账号目录 + Admin/User 权限
-const accountDirectoryScript = document.createElement("script");
-accountDirectoryScript.src = "./account-directory.js";
-accountDirectoryScript.defer = true;
-document.head.appendChild(accountDirectoryScript);
+[
+  "transfer.js",
+  "operation-date.js",
+  "inventory-date-fix.js",
+  "dashboard-products.js",
+  "product-history.js",
+  "manual-commission.js",
+  "navigation-cleanup.js",
+  "dashboard-category.js",
+  "account-directory.js",
+  "ui-polish.js"
+].forEach(file=>{
+  const script=document.createElement("script");
+  script.src="./"+file+"?v=20260825a";
+  script.defer=true;
+  document.head.appendChild(script);
+});

@@ -7,7 +7,7 @@ window.APP_CONFIG = {
 
 const centerViewStyle=document.createElement("link");
 centerViewStyle.rel="stylesheet";
-centerViewStyle.href="./center-view.css?v=20260825a";
+centerViewStyle.href="./center-view.css?v=20260825b";
 document.head.appendChild(centerViewStyle);
 
 [
@@ -23,7 +23,7 @@ document.head.appendChild(centerViewStyle);
   "ui-polish.js"
 ].forEach(file=>{
   const script=document.createElement("script");
-  script.src="./"+file+"?v=20260825a";
+  script.src="./"+file+"?v=20260825b";
   script.defer=true;
   document.head.appendChild(script);
 });

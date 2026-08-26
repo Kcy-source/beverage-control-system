@@ -4,7 +4,7 @@ window.APP_CONFIG = {
   SUPABASE_URL: "https://rudszzkodkchdasteboq.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_yHnU5ACbwLvpLt3h3OJpTw_Cd0OqiES"
 };
-const centerViewStyle=document.createElement("link");centerViewStyle.rel="stylesheet";centerViewStyle.href="./center-view.css?v=20260826a";document.head.appendChild(centerViewStyle);
+const centerViewStyle=document.createElement("link");centerViewStyle.rel="stylesheet";centerViewStyle.href="./center-view.css?v=20260826b";document.head.appendChild(centerViewStyle);
 [
-  "transfer.js","operation-date.js","inventory-date-fix.js","dashboard-products.js","product-history.js","manual-commission.js","navigation-cleanup.js","dashboard-category.js","account-directory.js","ui-polish.js","excel-export.js","refresh-fix.js"
-].forEach(file=>{const script=document.createElement("script");script.src="./"+file+"?v=20260826a";script.defer=true;document.head.appendChild(script);});
+  "transfer.js","operation-date.js","inventory-date-fix.js","dashboard-products.js","product-history.js","manual-commission.js","navigation-cleanup.js","dashboard-category.js","account-directory.js","ui-polish.js","excel-export.js","refresh-fix.js","sort-controls.js"
+].forEach(file=>{const script=document.createElement("script");script.src="./"+file+"?v=20260826b";script.defer=true;document.head.appendChild(script);});

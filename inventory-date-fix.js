@@ -1,5 +1,5 @@
 // 强制库存操作把用户选择的日期直接写入 inventory_logs.operation_date。
-// 同时重新绑定“保存/确认”按钮，避免旧事件处理器继续使用实际操作当天。
+// 同时记录盘点/编辑前后的库存，方便以后准确还原历史库存。
 (function(){
   let installed=false;
 
@@ -50,13 +50,17 @@
       if(u.error)return alert('库存更新失败：'+u.error.message);
 
       const locationName=loc==='fridge'?'冰箱':'仓库';
-      const note=(document.getElementById('stockNote').value||'').trim();
+      const userNote=(document.getElementById('stockNote').value||'').trim();
+      const logNote=action==='ADJUST'
+        ?`${locationName}｜盘点调整｜调整前 ${current}｜调整后 ${next}${userNote?'｜'+userNote:''}`
+        :`${locationName}｜${userNote}`;
+
       const l=await sb.from('inventory_logs').insert({
         item_id:x.id,
         item_name:x.name,
         action,
         quantity:qty,
-        note:`${locationName}｜${note}`,
+        note:logNote,
         user_email:userEmail(),
         operation_date:date
       });
@@ -92,6 +96,9 @@
 
       if(!p.name)return alert('请输入名称');
       const isEdit=!!editingId;
+      const beforeItem=isEdit?items.find(i=>i.id===editingId):null;
+      const beforeF=beforeItem?fridge(beforeItem):0;
+      const beforeW=beforeItem?warehouse(beforeItem):0;
       const r=isEdit
         ?await sb.from('inventory_items').update(p).eq('id',editingId).select().single()
         :await sb.from('inventory_items').insert(p).select().single();
@@ -103,7 +110,9 @@
         item_name:r.data.name,
         action:isEdit?'EDIT':'CREATE',
         quantity:fq+wq,
-        note:isEdit?`编辑资料（冰箱 ${fq} / 仓库 ${wq}）`:`新增饮料（冰箱 ${fq} / 仓库 ${wq}）`,
+        note:isEdit
+          ?`编辑资料（调整前 冰箱 ${beforeF} / 仓库 ${beforeW}；调整后 冰箱 ${fq} / 仓库 ${wq}）`
+          :`新增饮料（冰箱 ${fq} / 仓库 ${wq}）`,
         user_email:userEmail(),
         operation_date:date
       });
@@ -117,8 +126,6 @@
       await loadAll();
     };
 
-    // 关键修复：旧版 app.js 已经提前绑定过按钮事件。
-    // 替换按钮可以清除旧监听器，确保只执行上面的新版保存逻辑。
     replaceButton('saveStockBtn',()=>saveStock());
     replaceButton('saveItemBtn',()=>saveItem());
   }

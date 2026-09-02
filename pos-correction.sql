@@ -1,5 +1,4 @@
--- POS 错单更正：例如顾客实际喝可乐，但 POS 开成雪碧。
--- 运行后，系统可一次完成：恢复误扣饮料 + 扣减实际饮料，并写入两条关联库存记录。
+-- POS 错单更正：支持「品项开错」与「数量开错」。
 -- Supabase > SQL Editor > New query > 粘贴整段 > Run
 
 create extension if not exists pgcrypto;
@@ -10,6 +9,7 @@ alter table public.inventory_logs
 create index if not exists inventory_logs_correction_ref_idx
   on public.inventory_logs(correction_ref);
 
+-- 品项开错：例如实际喝可乐，但 POS 开成雪碧。
 create or replace function public.correct_pos_inventory(
   p_wrong_item uuid,
   p_actual_item uuid,
@@ -36,9 +36,7 @@ declare
   wrong_loc_name text;
   actual_loc_name text;
 begin
-  if not public.is_app_active() then
-    raise exception '此账号已停用';
-  end if;
+  if not public.is_app_active() then raise exception '此账号已停用'; end if;
   if p_wrong_item is null or p_actual_item is null then raise exception '请选择两种饮料'; end if;
   if p_wrong_item = p_actual_item then raise exception 'POS 开错饮料与实际饮料不能相同'; end if;
   if p_qty is null or p_qty <= 0 then raise exception '数量必须大于 0'; end if;
@@ -66,39 +64,91 @@ begin
     actual_w := actual_w - p_qty; actual_loc_name := '仓库';
   end if;
 
-  update public.inventory_items
-    set fridge_quantity=wrong_f, warehouse_quantity=wrong_w, quantity=wrong_f+wrong_w, updated_at=now()
-    where id=wrong_row.id;
-  update public.inventory_items
-    set fridge_quantity=actual_f, warehouse_quantity=actual_w, quantity=actual_f+actual_w, updated_at=now()
-    where id=actual_row.id;
+  update public.inventory_items set fridge_quantity=wrong_f,warehouse_quantity=wrong_w,quantity=wrong_f+wrong_w,updated_at=now() where id=wrong_row.id;
+  update public.inventory_items set fridge_quantity=actual_f,warehouse_quantity=actual_w,quantity=actual_f+actual_w,updated_at=now() where id=actual_row.id;
 
   insert into public.inventory_logs(item_id,item_name,action,quantity,note,user_email,operation_date,correction_ref)
-  values(
-    wrong_row.id, wrong_row.name, 'IN', p_qty,
-    wrong_loc_name||'｜错单更正｜POS 开成「'||wrong_row.name||'」，实际「'||actual_row.name||'」｜恢复误扣'||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
-    email,p_operation_date,ref
-  );
+  values(wrong_row.id,wrong_row.name,'IN',p_qty,
+    wrong_loc_name||'｜错单更正｜品项错误｜POS 开成「'||wrong_row.name||'」，实际「'||actual_row.name||'」｜恢复误扣'||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
+    email,p_operation_date,ref);
 
   insert into public.inventory_logs(item_id,item_name,action,quantity,note,user_email,operation_date,correction_ref)
-  values(
-    actual_row.id, actual_row.name, 'OUT', p_qty,
-    actual_loc_name||'｜错单更正｜POS 开成「'||wrong_row.name||'」，实际「'||actual_row.name||'」｜补扣实际'||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
-    email,p_operation_date,ref
-  );
+  values(actual_row.id,actual_row.name,'OUT',p_qty,
+    actual_loc_name||'｜错单更正｜品项错误｜POS 开成「'||wrong_row.name||'」，实际「'||actual_row.name||'」｜补扣实际'||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
+    email,p_operation_date,ref);
 
-  return jsonb_build_object(
-    'ok',true,
-    'correction_ref',ref,
-    'wrong_item',wrong_row.name,
-    'actual_item',actual_row.name,
-    'quantity',p_qty
-  );
+  return jsonb_build_object('ok',true,'correction_ref',ref,'type','item','wrong_item',wrong_row.name,'actual_item',actual_row.name,'quantity',p_qty);
 end;
 $$;
 
 grant execute on function public.correct_pos_inventory(uuid,uuid,numeric,text,text,date,text) to authenticated;
 
+-- 数量开错：例如 POS 开 4 瓶，实际只喝 3 瓶，则库存加回 1 瓶。
+create or replace function public.correct_pos_quantity(
+  p_item uuid,
+  p_pos_qty numeric,
+  p_actual_qty numeric,
+  p_location text,
+  p_operation_date date,
+  p_note text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  i public.inventory_items%rowtype;
+  f numeric;
+  w numeric;
+  diff numeric;
+  ref uuid := gen_random_uuid();
+  email text := coalesce(auth.jwt()->>'email','');
+  loc_name text;
+  act text;
+  reason text;
+begin
+  if not public.is_app_active() then raise exception '此账号已停用'; end if;
+  if p_item is null then raise exception '请选择饮料'; end if;
+  if p_pos_qty is null or p_pos_qty < 0 or p_actual_qty is null or p_actual_qty < 0 then raise exception '数量不能小于 0'; end if;
+  if p_pos_qty = p_actual_qty then raise exception 'POS 数量与实际数量相同，无需调整'; end if;
+  if p_location not in ('fridge','warehouse') then raise exception '库存位置无效'; end if;
+  if p_operation_date is null then raise exception '请选择日期'; end if;
+
+  select * into i from public.inventory_items where id=p_item for update;
+  if not found then raise exception '找不到饮料'; end if;
+  f := coalesce(i.fridge_quantity,0); w := coalesce(i.warehouse_quantity,0);
+  diff := abs(p_pos_qty-p_actual_qty);
+  loc_name := case when p_location='fridge' then '冰箱' else '仓库' end;
+
+  if p_pos_qty > p_actual_qty then
+    act := 'IN'; reason := '恢复多扣';
+    if p_location='fridge' then f := f + diff; else w := w + diff; end if;
+  else
+    act := 'OUT'; reason := '补扣少扣';
+    if p_location='fridge' then
+      if f < diff then raise exception '冰箱库存不足，当前只有 %', f; end if;
+      f := f - diff;
+    else
+      if w < diff then raise exception '仓库库存不足，当前只有 %', w; end if;
+      w := w - diff;
+    end if;
+  end if;
+
+  update public.inventory_items set fridge_quantity=f,warehouse_quantity=w,quantity=f+w,updated_at=now() where id=i.id;
+
+  insert into public.inventory_logs(item_id,item_name,action,quantity,note,user_email,operation_date,correction_ref)
+  values(i.id,i.name,act,diff,
+    loc_name||'｜错单更正｜数量错误｜POS 数量 '||p_pos_qty||'｜实际数量 '||p_actual_qty||'｜'||reason||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
+    email,p_operation_date,ref);
+
+  return jsonb_build_object('ok',true,'correction_ref',ref,'type','quantity','item',i.name,'pos_qty',p_pos_qty,'actual_qty',p_actual_qty,'adjustment',diff,'action',act);
+end;
+$$;
+
+grant execute on function public.correct_pos_quantity(uuid,numeric,numeric,text,date,text) to authenticated;
+
+-- 撤销一整组错单更正；适用于品项错误与数量错误。
 create or replace function public.undo_pos_correction(p_correction_ref uuid)
 returns jsonb
 language plpgsql

@@ -83,11 +83,11 @@ $$;
 
 grant execute on function public.correct_pos_inventory(uuid,uuid,numeric,text,text,date,text) to authenticated;
 
--- 数量开错：例如 POS 开 4 瓶，实际只喝 3 瓶，则库存加回 1 瓶。
-create or replace function public.correct_pos_quantity(
+-- 数量开错：不需要知道是哪张单，只记录盘点时发现实际库存多/少几瓶。
+create or replace function public.correct_pos_quantity_difference(
   p_item uuid,
-  p_pos_qty numeric,
-  p_actual_qty numeric,
+  p_difference numeric,
+  p_difference_type text,
   p_location text,
   p_operation_date date,
   p_note text default ''
@@ -101,7 +101,6 @@ declare
   i public.inventory_items%rowtype;
   f numeric;
   w numeric;
-  diff numeric;
   ref uuid := gen_random_uuid();
   email text := coalesce(auth.jwt()->>'email','');
   loc_name text;
@@ -110,39 +109,75 @@ declare
 begin
   if not public.is_app_active() then raise exception '此账号已停用'; end if;
   if p_item is null then raise exception '请选择饮料'; end if;
-  if p_pos_qty is null or p_pos_qty < 0 or p_actual_qty is null or p_actual_qty < 0 then raise exception '数量不能小于 0'; end if;
-  if p_pos_qty = p_actual_qty then raise exception 'POS 数量与实际数量相同，无需调整'; end if;
+  if p_difference is null or p_difference <= 0 then raise exception '差异数量必须大于 0'; end if;
+  if p_difference_type not in ('extra','short') then raise exception '差异类型无效'; end if;
   if p_location not in ('fridge','warehouse') then raise exception '库存位置无效'; end if;
   if p_operation_date is null then raise exception '请选择日期'; end if;
 
   select * into i from public.inventory_items where id=p_item for update;
   if not found then raise exception '找不到饮料'; end if;
-  f := coalesce(i.fridge_quantity,0); w := coalesce(i.warehouse_quantity,0);
-  diff := abs(p_pos_qty-p_actual_qty);
+
+  f := coalesce(i.fridge_quantity,0);
+  w := coalesce(i.warehouse_quantity,0);
   loc_name := case when p_location='fridge' then '冰箱' else '仓库' end;
 
-  if p_pos_qty > p_actual_qty then
-    act := 'IN'; reason := '恢复多扣';
-    if p_location='fridge' then f := f + diff; else w := w + diff; end if;
+  if p_difference_type='extra' then
+    act := 'IN'; reason := '实际库存多';
+    if p_location='fridge' then f := f + p_difference; else w := w + p_difference; end if;
   else
-    act := 'OUT'; reason := '补扣少扣';
+    act := 'OUT'; reason := '实际库存少';
     if p_location='fridge' then
-      if f < diff then raise exception '冰箱库存不足，当前只有 %', f; end if;
-      f := f - diff;
+      if f < p_difference then raise exception '冰箱库存不足，当前只有 %', f; end if;
+      f := f - p_difference;
     else
-      if w < diff then raise exception '仓库库存不足，当前只有 %', w; end if;
-      w := w - diff;
+      if w < p_difference then raise exception '仓库库存不足，当前只有 %', w; end if;
+      w := w - p_difference;
     end if;
   end if;
 
-  update public.inventory_items set fridge_quantity=f,warehouse_quantity=w,quantity=f+w,updated_at=now() where id=i.id;
+  update public.inventory_items
+  set fridge_quantity=f,warehouse_quantity=w,quantity=f+w,updated_at=now()
+  where id=i.id;
 
   insert into public.inventory_logs(item_id,item_name,action,quantity,note,user_email,operation_date,correction_ref)
-  values(i.id,i.name,act,diff,
-    loc_name||'｜错单更正｜数量错误｜POS 数量 '||p_pos_qty||'｜实际数量 '||p_actual_qty||'｜'||reason||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
-    email,p_operation_date,ref);
+  values(
+    i.id,i.name,act,p_difference,
+    loc_name||'｜错单更正｜数量错误｜'||reason||'｜差异 '||p_difference||case when coalesce(p_note,'')<>'' then '｜'||p_note else '' end,
+    email,p_operation_date,ref
+  );
 
-  return jsonb_build_object('ok',true,'correction_ref',ref,'type','quantity','item',i.name,'pos_qty',p_pos_qty,'actual_qty',p_actual_qty,'adjustment',diff,'action',act);
+  return jsonb_build_object('ok',true,'correction_ref',ref,'type','quantity','item',i.name,'difference',p_difference,'difference_type',p_difference_type,'action',act);
+end;
+$$;
+
+grant execute on function public.correct_pos_quantity_difference(uuid,numeric,text,text,date,text) to authenticated;
+
+-- 保留旧函数，避免旧页面缓存暂时失效。
+create or replace function public.correct_pos_quantity(
+  p_item uuid,
+  p_pos_qty numeric,
+  p_actual_qty numeric,
+  p_location text,
+  p_operation_date date,
+  p_note text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_pos_qty is null or p_actual_qty is null or p_pos_qty = p_actual_qty then
+    raise exception 'POS 数量与实际数量相同，无需调整';
+  end if;
+  return public.correct_pos_quantity_difference(
+    p_item,
+    abs(p_pos_qty-p_actual_qty),
+    case when p_pos_qty>p_actual_qty then 'extra' else 'short' end,
+    p_location,
+    p_operation_date,
+    p_note
+  );
 end;
 $$;
 

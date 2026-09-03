@@ -1,4 +1,4 @@
-// 销售提成记录按月份归档：默认只显示当月，历史月份收纳在“其他月份”。
+// 销售提成记录按月份归档：默认只显示当月；使用日期筛选时允许跨月份查询。
 (function(){
 'use strict';
 let activeMonth=currentMonth();
@@ -7,6 +7,9 @@ let applying=false;
 
 function currentMonth(){return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'}).slice(0,7);}
 function monthLabel(month){const [y,m]=String(month).split('-');return `${y}年${Number(m)}月`;}
+function dateRange(){return {from:document.getElementById('commissionDateFrom')?.value||'',to:document.getElementById('commissionDateTo')?.value||''};}
+function hasDateRange(){const r=dateRange();return !!(r.from||r.to);}
+function rangeLabel(){const {from,to}=dateRange();if(from&&to)return `日期范围：${from} 至 ${to}`;if(from)return `日期范围：${from} 起`;if(to)return `日期范围：截至 ${to}`;return '';}
 function wait(){
   if(typeof commissions==='undefined'||!document.getElementById('commissionBody')||!document.getElementById('manualCommissionSummary')||!document.getElementById('manualCommissionFilterPanel')){setTimeout(wait,150);return;}
   install();
@@ -20,6 +23,10 @@ function install(){
   box.innerHTML=`<button id="commissionCurrentMonthBtn" type="button" class="secondary"></button><details id="commissionOtherMonths"><summary>其他月份</summary><div id="commissionOtherMonthList"></div></details><span id="commissionActiveMonthLabel"></span>`;
   filter.parentElement.insertBefore(box,filter);
   document.getElementById('commissionCurrentMonthBtn').onclick=()=>selectMonth(currentMonth());
+  ['commissionDateFrom','commissionDateTo'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.addEventListener('change',()=>setTimeout(()=>{renderMonthOptions();applyMonthFilter();},0));
+  });
   const reset=document.getElementById('clearCommissionFiltersBtn');
   if(reset)reset.addEventListener('click',()=>{activeMonth=currentMonth();setTimeout(()=>{renderMonthOptions();applyMonthFilter();},0);},true);
   bodyObserver=new MutationObserver(()=>{if(!applying){renderMonthOptions();applyMonthFilter();}});
@@ -33,7 +40,7 @@ function selectMonth(month){
   ['commissionDateFrom','commissionDateTo'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const details=document.getElementById('commissionOtherMonths');if(details)details.open=false;
   renderMonthOptions();
-  // 触发现有筛选重新渲染，再由本脚本限制到所选月份。
+  // 选择月份时清除日期范围，再触发现有筛选重新渲染。
   const seller=document.getElementById('commissionSellerFilter');if(seller)seller.dispatchEvent(new Event('change'));
   else applyMonthFilter();
 }
@@ -41,33 +48,40 @@ function renderMonthOptions(){
   const now=currentMonth();
   const currentBtn=document.getElementById('commissionCurrentMonthBtn'),list=document.getElementById('commissionOtherMonthList'),label=document.getElementById('commissionActiveMonthLabel');
   if(!currentBtn||!list||!label)return;
+  const rangeMode=hasDateRange();
   currentBtn.textContent=`当月 · ${monthLabel(now)}`;
-  currentBtn.classList.toggle('month-active',activeMonth===now);
-  label.textContent=activeMonth===now?'':`当前显示：${monthLabel(activeMonth)}`;
+  currentBtn.classList.toggle('month-active',!rangeMode&&activeMonth===now);
+  label.textContent=rangeMode?rangeLabel():(activeMonth===now?'':`当前显示：${monthLabel(activeMonth)}`);
   const counts=new Map();
   (commissions||[]).forEach(r=>{const d=r.operation_date||new Date(r.created_at).toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'});const month=String(d).slice(0,7);counts.set(month,(counts.get(month)||0)+1);});
   const months=[...counts.keys()].filter(m=>m&&m!==now).sort((a,b)=>b.localeCompare(a));
-  list.innerHTML=months.length?months.map(m=>`<button type="button" class="commission-month-option${activeMonth===m?' month-active':''}" data-month="${m}">${monthLabel(m)} <span>${counts.get(m)} 条</span></button>`).join(''):'<div class="commission-month-empty-note">暂无其他月份记录</div>';
+  list.innerHTML=months.length?months.map(m=>`<button type="button" class="commission-month-option${!rangeMode&&activeMonth===m?' month-active':''}" data-month="${m}">${monthLabel(m)} <span>${counts.get(m)} 条</span></button>`).join(''):'<div class="commission-month-empty-note">暂无其他月份记录</div>';
   list.querySelectorAll('[data-month]').forEach(btn=>btn.onclick=()=>selectMonth(btn.dataset.month));
 }
 function applyMonthFilter(){
   const body=document.getElementById('commissionBody'),summary=document.getElementById('manualCommissionSummary');if(!body||!summary)return;
   applying=true;if(bodyObserver)bodyObserver.disconnect();
   body.querySelectorAll('.commission-month-empty-row').forEach(r=>r.remove());
-  let count=0,qty=0,amount=0;
+  const rangeMode=hasDateRange();
+  let count=0,qty=0,amount=0,hasSystemEmptyRow=false;
   [...body.querySelectorAll('tr')].forEach(row=>{
     const cells=row.children;
-    if(cells.length<6){row.style.display='';return;}
+    if(cells.length<6){
+      hasSystemEmptyRow=true;
+      row.style.display='';
+      return;
+    }
     const date=(cells[0].textContent||'').trim();
-    const show=date.slice(0,7)===activeMonth;
+    const show=rangeMode?true:date.slice(0,7)===activeMonth;
     row.style.display=show?'':'none';
     if(show){count++;qty+=Number((cells[3].textContent||'0').replace(/,/g,''))||0;amount+=Number((cells[5].textContent||'0').replace(/[^0-9.-]/g,''))||0;}
   });
-  if(count===0){
+  if(count===0&&!hasSystemEmptyRow&&!rangeMode){
     const tr=document.createElement('tr');tr.className='commission-month-empty-row';tr.innerHTML=`<td colspan="9">${monthLabel(activeMonth)}暂无销售提成记录</td>`;body.appendChild(tr);
   }
   summary.textContent=`记录 ${count}｜销售数量 ${qty}｜提成 $${amount.toFixed(2)}`;
-  const label=document.getElementById('commissionActiveMonthLabel');if(label&&activeMonth!==currentMonth())label.textContent=`当前显示：${monthLabel(activeMonth)}`;
+  const label=document.getElementById('commissionActiveMonthLabel');
+  if(label)label.textContent=rangeMode?rangeLabel():(activeMonth===currentMonth()?'':`当前显示：${monthLabel(activeMonth)}`);
   applying=false;observeBody();
 }
 function addStyle(){

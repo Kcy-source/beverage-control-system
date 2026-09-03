@@ -1,4 +1,4 @@
-// 统一日期输入为 YYYY-MM-DD，并使用自定义日历；在 dialog 内打开时把日历放进同一个 dialog，确保可以点击选择。
+// 统一日期输入为 YYYY-MM-DD，并使用自定义日历；兼容普通页面和 dialog，所有账号使用同一套日期选择逻辑。
 (function(){
   'use strict';
 
@@ -26,7 +26,7 @@
     s.id='standardDateInputStyle';
     s.textContent=`
 .standard-date-wrap{position:relative;width:100%;display:block}
-.standard-date-wrap>.standard-date-input{width:100%!important;padding-right:42px!important}
+.standard-date-wrap>.standard-date-input{width:100%!important;padding-right:42px!important;cursor:pointer}
 .standard-date-picker-btn{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:30px;height:30px;padding:0!important;border:0!important;border-radius:7px!important;background:transparent!important;color:#344054!important;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3}
 .standard-date-picker-btn:hover{background:#eef2f6!important}
 .standard-date-picker-btn svg{width:18px;height:18px;pointer-events:none}
@@ -51,6 +51,8 @@
   }
 
   function buildPopup(){
+    if(popup&&popup.isConnected)return popup;
+    popup=document.getElementById('standardDateCalendar');
     if(popup)return popup;
     popup=document.createElement('div');
     popup.id='standardDateCalendar';
@@ -107,6 +109,7 @@
   }
 
   function openCalendar(input){
+    if(!input)return;
     activeInput=input;
     movePopupToActiveLayer();
     const selected=parseISO(input.value)||todayParts()||{y:new Date().getFullYear(),m:new Date().getMonth(),d:1};
@@ -128,8 +131,27 @@
     input.focus();
   }
 
+  function bindInput(input){
+    if(!input||input.dataset.datePickerBound==='20260903m')return;
+    input.dataset.datePickerBound='20260903m';
+    input.addEventListener('click',e=>{e.stopPropagation();openCalendar(input);});
+    input.addEventListener('focus',()=>{if(input.dataset.openCalendarOnFocus==='1')openCalendar(input);});
+    input.addEventListener('blur',()=>normalize(input));
+    input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&e.altKey){e.preventDefault();openCalendar(input);}if(e.key==='Escape')closeCalendar();});
+    const wrap=input.closest('.standard-date-wrap');
+    const btn=wrap?.querySelector('.standard-date-picker-btn');
+    if(btn&&!btn.dataset.datePickerBound){
+      btn.dataset.datePickerBound='1';
+      btn.onclick=e=>{e.preventDefault();e.stopPropagation();openCalendar(input);};
+    }
+  }
+
   function enhance(input){
-    if(!input||input.dataset.standardDate==='1')return;
+    if(!input)return;
+    if(input.dataset.standardDate==='1'){
+      bindInput(input);
+      return;
+    }
     input.dataset.standardDate='1';
     const initial=input.value;
     input.type='text';input.classList.add('standard-date-input');input.placeholder='YYYY-MM-DD';input.inputMode='numeric';input.autocomplete='off';
@@ -139,22 +161,26 @@
     const btn=document.createElement('button');btn.type='button';btn.className='standard-date-picker-btn';btn.title='选择日期';btn.setAttribute('aria-label','选择日期');
     btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>';
     wrap.appendChild(btn);
-    btn.onclick=e=>{e.preventDefault();e.stopPropagation();openCalendar(input);};
-    input.addEventListener('blur',()=>normalize(input));
-    input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&e.altKey){e.preventDefault();openCalendar(input);}if(e.key==='Escape')closeCalendar();});
+    bindInput(input);
   }
 
   function apply(root){
-    if(root?.matches?.('input[type="date"]'))enhance(root);
+    if(root?.matches?.('input[type="date"],input.standard-date-input'))enhance(root);
     const scope=root?.querySelectorAll?root:document;
-    scope.querySelectorAll('input[type="date"]:not([data-standard-date="1"])').forEach(enhance);
+    scope.querySelectorAll('input[type="date"],input.standard-date-input').forEach(enhance);
   }
 
   function install(){
     addStyle();buildPopup();apply(document);
     const observer=new MutationObserver(mutations=>mutations.forEach(m=>m.addedNodes.forEach(node=>{if(node.nodeType===1)apply(node);})));observer.observe(document.body,{childList:true,subtree:true});
     document.addEventListener('mousedown',e=>{if(popup&&!popup.hidden&&!e.target.closest('#standardDateCalendar')&&!e.target.closest('.standard-date-wrap'))closeCalendar();});
+    document.addEventListener('click',e=>{
+      const wrap=e.target.closest?.('.standard-date-wrap');
+      const input=wrap?.querySelector('input.standard-date-input');
+      if(input&&e.target.closest('.standard-date-picker-btn'))openCalendar(input);
+    });
     window.addEventListener('resize',positionPopup);window.addEventListener('scroll',positionPopup,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCalendar();});
+    setInterval(()=>apply(document),1500);
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();

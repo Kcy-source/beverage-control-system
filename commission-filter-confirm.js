@@ -61,7 +61,7 @@ function install(){
       reset.style.width='auto';reset.style.flex='1';
       const confirm=document.createElement('button');
       confirm.id='applyCommissionFiltersBtn';confirm.type='button';confirm.textContent='确定';confirm.style.minHeight='42px';confirm.style.flex='1';
-      actions.appendChild(confirm);
+      actions.insertBefore(confirm,reset);
       confirm.onclick=applyFilters;
     }
     reset.addEventListener('click',()=>{applied={seller:'',item:'',from:'',to:''};},true);

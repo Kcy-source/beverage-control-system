@@ -1,10 +1,10 @@
-// 统一日期输入为 YYYY-MM-DD，并使用自定义日历，避免 Windows / Chromium 原生日期框显示和回填不稳定。
+// 统一日期输入为 YYYY-MM-DD，并使用自定义日历；在 dialog 内打开时把日历放进同一个 dialog，确保可以点击选择。
 (function(){
   'use strict';
 
   let activeInput=null;
   let viewYear=0;
-  let viewMonth=0; // 0-11
+  let viewMonth=0;
   let popup=null;
 
   function pad(n){return String(n).padStart(2,'0');}
@@ -17,14 +17,8 @@
     if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d)return null;
     return {y,m:mo-1,d};
   }
-  function todayParts(){
-    const s=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'});
-    return parseISO(s);
-  }
-  function normalize(input){
-    const p=parseISO(input.value);
-    if(p)input.value=iso(p.y,p.m,p.d);
-  }
+  function todayParts(){return parseISO(new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'}));}
+  function normalize(input){const p=parseISO(input.value);if(p)input.value=iso(p.y,p.m,p.d);}
 
   function addStyle(){
     if(document.getElementById('standardDateInputStyle'))return;
@@ -36,7 +30,7 @@
 .standard-date-picker-btn{position:absolute;right:7px;top:50%;transform:translateY(-50%);width:30px;height:30px;padding:0!important;border:0!important;border-radius:7px!important;background:transparent!important;color:#344054!important;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3}
 .standard-date-picker-btn:hover{background:#eef2f6!important}
 .standard-date-picker-btn svg{width:18px;height:18px;pointer-events:none}
-#standardDateCalendar{position:fixed;z-index:10000;width:300px;background:#fff;border:1px solid #d9e0e8;border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.18);padding:12px;color:#172033;font-family:Arial,"Microsoft YaHei",sans-serif}
+#standardDateCalendar{position:fixed;z-index:2147483647;width:300px;background:#fff;border:1px solid #d9e0e8;border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.22);padding:12px;color:#172033;font-family:Arial,"Microsoft YaHei",sans-serif}
 #standardDateCalendar .cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
 #standardDateCalendar .cal-title{font-weight:700;font-size:14px}
 #standardDateCalendar .cal-nav{display:flex;gap:4px}
@@ -66,49 +60,43 @@
     return popup;
   }
 
+  function movePopupToActiveLayer(){
+    const p=buildPopup();
+    const dialog=activeInput?.closest('dialog');
+    const target=dialog||document.body;
+    if(p.parentElement!==target)target.appendChild(p);
+  }
+
   function withinLimits(value,input){
-    const min=input.getAttribute('min')||'';
-    const max=input.getAttribute('max')||'';
+    const min=input.getAttribute('min')||'',max=input.getAttribute('max')||'';
     return (!min||value>=min)&&(!max||value<=max);
   }
 
   function renderCalendar(){
     if(!activeInput)return;
     const p=buildPopup();
-    const selected=parseISO(activeInput.value);
-    const today=todayParts();
-    const first=new Date(viewYear,viewMonth,1);
-    const start=new Date(viewYear,viewMonth,1-first.getDay());
+    const selected=parseISO(activeInput.value),today=todayParts();
+    const first=new Date(viewYear,viewMonth,1),start=new Date(viewYear,viewMonth,1-first.getDay());
     const weekdays=['日','一','二','三','四','五','六'];
     let days='';
     for(let i=0;i<42;i++){
       const d=new Date(start);d.setDate(start.getDate()+i);
       const y=d.getFullYear(),m=d.getMonth(),day=d.getDate(),value=iso(y,m,day);
-      const other=m!==viewMonth;
-      const isToday=today&&today.y===y&&today.m===m&&today.d===day;
-      const isSelected=selected&&selected.y===y&&selected.m===m&&selected.d===day;
-      const disabled=!withinLimits(value,activeInput);
+      const other=m!==viewMonth,isToday=today&&today.y===y&&today.m===m&&today.d===day,isSelected=selected&&selected.y===y&&selected.m===m&&selected.d===day,disabled=!withinLimits(value,activeInput);
       days+=`<button type="button" class="cal-day${other?' other':''}${isToday?' today':''}${isSelected?' selected':''}" data-date="${value}" ${disabled?'disabled':''}>${day}</button>`;
     }
-    p.innerHTML=`
-      <div class="cal-head"><div class="cal-title">${viewYear}年${pad(viewMonth+1)}月</div><div class="cal-nav"><button type="button" data-nav="prev" aria-label="上个月">‹</button><button type="button" data-nav="next" aria-label="下个月">›</button></div></div>
-      <div class="cal-week">${weekdays.map(x=>`<span>${x}</span>`).join('')}</div>
-      <div class="cal-grid">${days}</div>
-      <div class="cal-footer"><button type="button" data-action="clear">清除</button><button type="button" data-action="today">今天</button></div>`;
+    p.innerHTML=`<div class="cal-head"><div class="cal-title">${viewYear}年${pad(viewMonth+1)}月</div><div class="cal-nav"><button type="button" data-nav="prev" aria-label="上个月">‹</button><button type="button" data-nav="next" aria-label="下个月">›</button></div></div><div class="cal-week">${weekdays.map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-grid">${days}</div><div class="cal-footer"><button type="button" data-action="clear">清除</button><button type="button" data-action="today">今天</button></div>`;
     p.querySelector('[data-nav="prev"]').onclick=()=>{viewMonth--;if(viewMonth<0){viewMonth=11;viewYear--;}renderCalendar();positionPopup();};
     p.querySelector('[data-nav="next"]').onclick=()=>{viewMonth++;if(viewMonth>11){viewMonth=0;viewYear++;}renderCalendar();positionPopup();};
     p.querySelectorAll('[data-date]').forEach(btn=>btn.onclick=()=>selectDate(btn.dataset.date));
     p.querySelector('[data-action="clear"]').onclick=()=>selectDate('');
-    p.querySelector('[data-action="today"]').onclick=()=>{
-      const t=todayParts();if(t){const v=iso(t.y,t.m,t.d);if(withinLimits(v,activeInput))selectDate(v);}
-    };
+    p.querySelector('[data-action="today"]').onclick=()=>{const t=todayParts();if(t){const v=iso(t.y,t.m,t.d);if(withinLimits(v,activeInput))selectDate(v);}};
   }
 
   function positionPopup(){
     if(!popup||popup.hidden||!activeInput)return;
     const wrap=activeInput.closest('.standard-date-wrap')||activeInput;
-    const r=wrap.getBoundingClientRect();
-    const width=300;
+    const r=wrap.getBoundingClientRect(),width=300;
     let left=r.left;
     if(left+width>window.innerWidth-8)left=Math.max(8,window.innerWidth-width-8);
     let top=r.bottom+6;
@@ -120,6 +108,7 @@
 
   function openCalendar(input){
     activeInput=input;
+    movePopupToActiveLayer();
     const selected=parseISO(input.value)||todayParts()||{y:new Date().getFullYear(),m:new Date().getMonth(),d:1};
     viewYear=selected.y;viewMonth=selected.m;
     renderCalendar();
@@ -143,20 +132,11 @@
     if(!input||input.dataset.standardDate==='1')return;
     input.dataset.standardDate='1';
     const initial=input.value;
-    input.type='text';
-    input.classList.add('standard-date-input');
-    input.placeholder='YYYY-MM-DD';
-    input.inputMode='numeric';
-    input.autocomplete='off';
-    input.setAttribute('aria-label',input.getAttribute('aria-label')||'日期 YYYY-MM-DD');
-    if(initial)input.value=initial;
-
-    const parent=input.parentNode;
-    if(!parent)return;
-    const wrap=document.createElement('div');wrap.className='standard-date-wrap';
-    parent.insertBefore(wrap,input);wrap.appendChild(input);
-    const btn=document.createElement('button');
-    btn.type='button';btn.className='standard-date-picker-btn';btn.title='选择日期';btn.setAttribute('aria-label','选择日期');
+    input.type='text';input.classList.add('standard-date-input');input.placeholder='YYYY-MM-DD';input.inputMode='numeric';input.autocomplete='off';
+    input.setAttribute('aria-label',input.getAttribute('aria-label')||'日期 YYYY-MM-DD');if(initial)input.value=initial;
+    const parent=input.parentNode;if(!parent)return;
+    const wrap=document.createElement('div');wrap.className='standard-date-wrap';parent.insertBefore(wrap,input);wrap.appendChild(input);
+    const btn=document.createElement('button');btn.type='button';btn.className='standard-date-picker-btn';btn.title='选择日期';btn.setAttribute('aria-label','选择日期');
     btn.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"></rect><path d="M16 3v4M8 3v4M3 10h18"></path></svg>';
     wrap.appendChild(btn);
     btn.onclick=e=>{e.preventDefault();e.stopPropagation();openCalendar(input);};
@@ -174,8 +154,7 @@
     addStyle();buildPopup();apply(document);
     const observer=new MutationObserver(mutations=>mutations.forEach(m=>m.addedNodes.forEach(node=>{if(node.nodeType===1)apply(node);})));observer.observe(document.body,{childList:true,subtree:true});
     document.addEventListener('mousedown',e=>{if(popup&&!popup.hidden&&!e.target.closest('#standardDateCalendar')&&!e.target.closest('.standard-date-wrap'))closeCalendar();});
-    window.addEventListener('resize',positionPopup);window.addEventListener('scroll',positionPopup,true);
-    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCalendar();});
+    window.addEventListener('resize',positionPopup);window.addEventListener('scroll',positionPopup,true);document.addEventListener('keydown',e=>{if(e.key==='Escape')closeCalendar();});
   }
 
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',install,{once:true});else install();

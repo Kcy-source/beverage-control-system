@@ -51,6 +51,7 @@ function install(){
   if(installed)return;installed=true;
   ['commissionSellerFilter','commissionItemFilter','commissionDateFrom','commissionDateTo'].forEach(cloneControl);
   applied=readControls();
+  window.getAppliedCommissionFilters=()=>({...applied});
 
   const reset=el('clearCommissionFiltersBtn');
   if(reset){

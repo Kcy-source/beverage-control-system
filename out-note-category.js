@@ -1,0 +1,176 @@
+// 出库备注增强：增加月份与用途分类筛选，并统计筛选后的出库总数。
+(function(){
+  'use strict';
+  let installed=false;
+  let observer=null;
+
+  const CATEGORIES=['FOC','厨房使用','未付款 / 员工使用','招待 / ENT','其他'];
+
+  function currentMonth(){return new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Singapore'}).slice(0,7);}
+  function monthLabel(v){const [y,m]=String(v||'').split('-');return y&&m?`${y}年${Number(m)}月`:'';}
+  function classify(note){
+    const raw=String(note||'').trim();
+    const s=raw.toLowerCase().replace(/\s+/g,' ');
+    if(/(^|[^a-z])foc([^a-z]|$)/i.test(raw)||s.includes('complimentary')||raw.includes('免费'))return 'FOC';
+    if(raw.includes('厨房')||s.includes('kitchen'))return '厨房使用';
+    if(s.includes('no paid')||s.includes('not paid')||s.includes('unpaid')||raw.includes('没paid')||raw.includes('没 paid')||raw.includes('未付款')||raw.includes('没付款')||raw.includes('员工'))return '未付款 / 员工使用';
+    if(/(^|[^a-z])ent([\s\-_/]|$)/i.test(raw)||s.includes('entertain')||raw.includes('招待'))return '招待 / ENT';
+    return '其他';
+  }
+
+  function wait(){
+    if(!document.getElementById('outNoteFilters')||!document.getElementById('outNoteBody')||!document.getElementById('outNoteSummary')){setTimeout(wait,150);return;}
+    install();
+  }
+
+  function install(){
+    if(installed)return;installed=true;
+    addControls();
+    addStyle();
+    bindActions();
+    observer=new MutationObserver(()=>setTimeout(()=>{decorateRows();populateMonths();applyExtraFilters();},0));
+    observer.observe(document.getElementById('outNoteBody'),{childList:true});
+    setTimeout(()=>{decorateRows();populateMonths(true);applyExtraFilters();},100);
+  }
+
+  function addControls(){
+    const filter=document.getElementById('outNoteFilters');
+    const itemLabel=document.getElementById('outNoteItemFilter')?.closest('label');
+    if(!filter||!itemLabel)return;
+
+    if(!document.getElementById('outNoteCategoryFilter')){
+      const label=document.createElement('label');
+      label.innerHTML=`用途分类<select id="outNoteCategoryFilter"><option value="">全部分类</option>${CATEGORIES.map(x=>`<option value="${x}">${x}</option>`).join('')}</select>`;
+      itemLabel.after(label);
+    }
+
+    if(!document.getElementById('outNoteMonthFilter')){
+      const label=document.createElement('label');
+      label.innerHTML='<span>月份</span><select id="outNoteMonthFilter"><option value="">全部月份</option></select>';
+      document.getElementById('outNoteCategoryFilter').closest('label').after(label);
+    }
+
+    const groupCard=document.getElementById('outNoteGroupBody')?.closest('.out-note-card');
+    if(groupCard){
+      const title=groupCard.querySelector('.section-head h3');
+      const hint=groupCard.querySelector('.section-head .hint');
+      if(title)title.textContent='用途分类汇总';
+      if(hint)hint.textContent='按用途分类合计';
+      const head=groupCard.querySelector('thead tr');
+      if(head)head.innerHTML='<th>用途分类</th><th>记录数</th><th>出库数量</th>';
+    }
+
+    const detailHead=document.querySelector('#outNotes .out-note-detail-wrap thead tr');
+    if(detailHead&&!detailHead.querySelector('.out-note-category-head')){
+      const th=document.createElement('th');th.className='out-note-category-head';th.textContent='用途分类';
+      detailHead.insertBefore(th,detailHead.children[2]||null);
+    }
+  }
+
+  function bindActions(){
+    const query=document.getElementById('applyOutNoteFilter');
+    const reset=document.getElementById('resetOutNoteFilter');
+    const month=document.getElementById('outNoteMonthFilter');
+    const from=document.getElementById('outNoteDateFrom');
+    const to=document.getElementById('outNoteDateTo');
+
+    if(query)query.addEventListener('click',()=>setTimeout(()=>{decorateRows();applyExtraFilters();},0));
+    if(reset)reset.addEventListener('click',()=>setTimeout(()=>{
+      const c=document.getElementById('outNoteCategoryFilter');if(c)c.value='';
+      const m=document.getElementById('outNoteMonthFilter');if(m)m.value=currentMonth();
+      decorateRows();applyExtraFilters();
+    },0));
+    if(month)month.addEventListener('change',()=>{
+      if(month.value){if(from)from.value='';if(to)to.value='';}
+    });
+    [from,to].forEach(el=>el&&el.addEventListener('change',()=>{if(el.value&&month)month.value='';}));
+  }
+
+  function populateMonths(forceDefault=false){
+    const sel=document.getElementById('outNoteMonthFilter');if(!sel)return;
+    const previous=sel.value;
+    const months=new Set([currentMonth()]);
+    document.querySelectorAll('#outNoteBody tr').forEach(tr=>{
+      const d=(tr.children[0]?.textContent||'').trim();
+      if(/^\d{4}-\d{2}-\d{2}$/.test(d))months.add(d.slice(0,7));
+    });
+    const list=[...months].sort((a,b)=>b.localeCompare(a));
+    sel.innerHTML='<option value="">全部月份</option>'+list.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');
+    if(forceDefault)sel.value=currentMonth();
+    else if(list.includes(previous))sel.value=previous;
+    else if(!previous)sel.value='';
+  }
+
+  function decorateRows(){
+    document.querySelectorAll('#outNoteBody tr').forEach(tr=>{
+      if(tr.querySelector('.out-note-category-cell'))return;
+      if(tr.children.length<6){const td=tr.querySelector('td[colspan]');if(td)td.colSpan=7;return;}
+      const note=(tr.children[4]?.textContent||'').trim();
+      const td=document.createElement('td');
+      td.className='out-note-category-cell';
+      td.dataset.category=classify(note);
+      td.innerHTML=`<span class="out-note-category-pill">${td.dataset.category}</span>`;
+      tr.insertBefore(td,tr.children[2]||null);
+    });
+  }
+
+  function baseVisibleRows(){
+    return [...document.querySelectorAll('#outNoteBody tr')].filter(tr=>tr.children.length>=7);
+  }
+
+  function applyExtraFilters(){
+    decorateRows();
+    const category=document.getElementById('outNoteCategoryFilter')?.value||'';
+    const month=document.getElementById('outNoteMonthFilter')?.value||'';
+    const rows=baseVisibleRows();
+    let visible=[];
+
+    rows.forEach(tr=>{
+      const date=(tr.children[0]?.textContent||'').trim();
+      const cat=tr.querySelector('.out-note-category-cell')?.dataset.category||'';
+      const show=(!category||cat===category)&&(!month||date.slice(0,7)===month);
+      tr.style.display=show?'':'none';
+      if(show)visible.push(tr);
+    });
+
+    const totalQty=visible.reduce((s,tr)=>s+(Number((tr.children[3]?.textContent||'0').replace(/,/g,''))||0),0);
+    const summary=document.getElementById('outNoteSummary');
+    const count=document.getElementById('outNoteCount');
+    const item=document.getElementById('outNoteItemFilter')?.value||'';
+    const filterParts=[];
+    if(month)filterParts.push(monthLabel(month));
+    if(item)filterParts.push(item);
+    if(category)filterParts.push(category);
+    if(summary)summary.innerHTML=`<span>记录 <b>${visible.length}</b></span><span>出库数量 <b>${Number(totalQty.toFixed(2))}</b></span>${filterParts.length?`<span>当前筛选 <b>${filterParts.join(' · ')}</b></span>`:''}`;
+    if(count)count.textContent=`显示 ${visible.length} 条`;
+
+    const groups=new Map();
+    visible.forEach(tr=>{
+      const cat=tr.querySelector('.out-note-category-cell')?.dataset.category||'其他';
+      const qty=Number((tr.children[3]?.textContent||'0').replace(/,/g,''))||0;
+      const g=groups.get(cat)||{category:cat,count:0,qty:0};
+      g.count++;g.qty+=qty;groups.set(cat,g);
+    });
+    const body=document.getElementById('outNoteGroupBody');
+    if(body){
+      const grouped=[...groups.values()].sort((a,b)=>b.qty-a.qty||b.count-a.count||a.category.localeCompare(b.category));
+      body.innerHTML=grouped.map(g=>`<tr><td><b>${g.category}</b></td><td>${g.count}</td><td>${Number(g.qty.toFixed(2))}</td></tr>`).join('')||'<tr><td colspan="3">暂无符合条件的出库记录</td></tr>';
+    }
+  }
+
+  function addStyle(){
+    if(document.getElementById('outNoteCategoryStyle'))return;
+    const s=document.createElement('style');s.id='outNoteCategoryStyle';s.textContent=`
+#outNoteFilters{grid-template-columns:minmax(150px,1fr) minmax(145px,.8fr) minmax(140px,.75fr) minmax(145px,.8fr) minmax(145px,.8fr) minmax(190px,1.1fr) auto!important}
+.out-note-category-pill{display:inline-flex;align-items:center;border-radius:999px;background:#eef2f6;color:#344054;padding:4px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+#outNotes .out-note-detail-wrap table{min-width:920px}
+@media(max-width:1380px){#outNoteFilters{grid-template-columns:repeat(3,minmax(150px,1fr))!important}.out-note-actions{grid-column:auto!important}}
+@media(max-width:900px){#outNoteFilters{grid-template-columns:1fr 1fr!important}.out-note-actions{grid-column:1/-1!important}}
+@media(max-width:620px){#outNoteFilters{grid-template-columns:1fr!important}.out-note-actions{grid-column:1!important}}
+`;
+    document.head.appendChild(s);
+  }
+
+  window.applyOutNoteCategoryFilter=applyExtraFilters;
+  wait();
+})();

@@ -1,4 +1,4 @@
-// 员工提成筛选：筛选条件先选择，点击“确定”后才应用；重置立即恢复默认。
+// 员工提成筛选：筛选条件先选择，点击“查询”后才应用；重置立即恢复默认。
 (function(){
 'use strict';
 let installed=false;
@@ -60,7 +60,7 @@ function install(){
       actions.style.display='flex';actions.style.alignItems='flex-end';actions.style.gap='8px';
       reset.style.width='auto';reset.style.flex='1';
       const confirm=document.createElement('button');
-      confirm.id='applyCommissionFiltersBtn';confirm.type='button';confirm.textContent='确定';confirm.style.minHeight='42px';confirm.style.flex='1';
+      confirm.id='applyCommissionFiltersBtn';confirm.type='button';confirm.textContent='查询';confirm.style.minHeight='42px';confirm.style.flex='1';
       actions.insertBefore(confirm,reset);
       confirm.onclick=applyFilters;
     }

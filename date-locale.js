@@ -6,6 +6,7 @@
   let viewYear=0;
   let viewMonth=0;
   let popup=null;
+  const boundInputs=new WeakSet();
 
   function pad(n){return String(n).padStart(2,'0');}
   function iso(y,m,d){return `${y}-${pad(m+1)}-${pad(d)}`;}
@@ -132,16 +133,22 @@
   }
 
   function bindInput(input){
-    if(!input||input.dataset.datePickerBound==='20260903m')return;
-    input.dataset.datePickerBound='20260903m';
-    input.addEventListener('click',e=>{e.stopPropagation();openCalendar(input);});
-    input.addEventListener('focus',()=>{if(input.dataset.openCalendarOnFocus==='1')openCalendar(input);});
-    input.addEventListener('blur',()=>normalize(input));
-    input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&e.altKey){e.preventDefault();openCalendar(input);}if(e.key==='Escape')closeCalendar();});
+    if(!input)return;
+
+    // 不能依赖 data-* 判断是否已绑定。筛选控件有时会被 cloneNode 复制，
+    // clone 会复制 data-*，但不会复制事件监听器，导致日期框看起来正常却点不动。
+    if(!boundInputs.has(input)){
+      boundInputs.add(input);
+      input.addEventListener('click',e=>{e.stopPropagation();openCalendar(input);});
+      input.addEventListener('focus',()=>{if(input.dataset.openCalendarOnFocus==='1')openCalendar(input);});
+      input.addEventListener('blur',()=>normalize(input));
+      input.addEventListener('keydown',e=>{if(e.key==='ArrowDown'&&e.altKey){e.preventDefault();openCalendar(input);}if(e.key==='Escape')closeCalendar();});
+    }
+
+    // 按钮可能来自旧 input 的 wrapper。每次都重新指向当前可见的 input。
     const wrap=input.closest('.standard-date-wrap');
     const btn=wrap?.querySelector('.standard-date-picker-btn');
-    if(btn&&!btn.dataset.datePickerBound){
-      btn.dataset.datePickerBound='1';
+    if(btn){
       btn.onclick=e=>{e.preventDefault();e.stopPropagation();openCalendar(input);};
     }
   }

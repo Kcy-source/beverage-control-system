@@ -1,63 +1,45 @@
-// 销售提成：只固定“汇总栏 + 表头”的显示副本；不改动筛选栏、原表格结构或页面布局。
+// 销售提成：只固定表格表头；不改动筛选栏、汇总栏、表格结构或页面布局。
 (function(){
   'use strict';
 
   let overlay=null;
-  let summaryCopy=null;
-  let headerViewport=null;
   let headerTable=null;
   let section=null;
-  let summary=null;
   let table=null;
 
   function build(){
-    if(document.getElementById('commissionSummaryHeaderOverlay'))return;
+    if(document.getElementById('commissionHeaderOnlyOverlay'))return;
     overlay=document.createElement('div');
-    overlay.id='commissionSummaryHeaderOverlay';
-    overlay.innerHTML='<div class="commission-fixed-summary-copy"></div><div class="commission-fixed-head-viewport"><table><thead></thead></table></div>';
+    overlay.id='commissionHeaderOnlyOverlay';
+    overlay.innerHTML='<div class="commission-fixed-head-viewport"><table><thead></thead></table></div>';
     document.body.appendChild(overlay);
-    summaryCopy=overlay.querySelector('.commission-fixed-summary-copy');
-    headerViewport=overlay.querySelector('.commission-fixed-head-viewport');
     headerTable=overlay.querySelector('table');
 
     const style=document.createElement('style');
-    style.id='commissionSummaryHeaderOverlayStyle';
+    style.id='commissionHeaderOnlyOverlayStyle';
     style.textContent=`
-#commissionSummaryHeaderOverlay{
+#commissionHeaderOnlyOverlay{
   position:fixed;
   top:0;
   z-index:5000;
   display:none;
   box-sizing:border-box;
-  background:#fff;
-  box-shadow:0 2px 8px rgba(15,23,42,.08);
+  background:#f8fafc;
+  box-shadow:0 2px 7px rgba(15,23,42,.08);
   pointer-events:none;
-  padding-top:8px;
 }
-#commissionSummaryHeaderOverlay .commission-fixed-summary-copy{
-  display:inline-flex;
-  align-items:center;
-  min-height:34px;
-  padding:7px 11px;
-  margin:0 0 10px 0;
-  border-radius:9px;
-  background:#f1f5f9;
-  color:#475467;
-  font-weight:600;
-  white-space:nowrap;
-}
-#commissionSummaryHeaderOverlay .commission-fixed-head-viewport{
+#commissionHeaderOnlyOverlay .commission-fixed-head-viewport{
   width:100%;
   overflow:hidden;
   background:#f8fafc;
   border-bottom:1px solid #e5e7eb;
 }
-#commissionSummaryHeaderOverlay table{
+#commissionHeaderOnlyOverlay table{
   border-collapse:collapse;
   table-layout:fixed;
   margin:0;
 }
-#commissionSummaryHeaderOverlay th{
+#commissionHeaderOnlyOverlay th{
   background:#f8fafc!important;
   color:#6b7280;
   font-size:12px;
@@ -73,19 +55,16 @@
 
   function bindTargets(){
     section=document.getElementById('commission');
-    summary=document.getElementById('manualCommissionSummary');
     table=section?.querySelector('table')||null;
-    return !!(section&&summary&&table&&table.tHead);
+    return !!(section&&table&&table.tHead&&table.tHead.rows.length);
   }
 
   function syncHeader(){
     if(!bindTargets())return false;
-    summaryCopy.textContent=summary.textContent||'';
-
     const originalRow=table.tHead.rows[0];
-    if(!originalRow)return false;
     const clone=originalRow.cloneNode(true);
     clone.querySelectorAll('[id]').forEach(el=>el.removeAttribute('id'));
+
     const thead=headerTable.tHead;
     thead.innerHTML='';
     thead.appendChild(clone);
@@ -106,18 +85,19 @@
 
   function update(){
     if(!overlay||!bindTargets())return;
+
     const sectionStyle=getComputedStyle(section);
     if(sectionStyle.display==='none'||section.closest('.hidden')){
       overlay.style.display='none';
       return;
     }
 
-    const summaryRect=summary.getBoundingClientRect();
+    const originalHead=table.tHead.getBoundingClientRect();
     const tableRect=table.getBoundingClientRect();
     const sectionRect=section.getBoundingClientRect();
 
-    // 只有原汇总栏已经滚出顶部，且表格仍在视窗中时才显示固定副本。
-    const shouldShow=summaryRect.top<0 && tableRect.bottom>70 && sectionRect.bottom>70;
+    // 只有原表头滚出页面顶部，而表格内容仍在视窗中时才显示固定表头。
+    const shouldShow=originalHead.top<0 && tableRect.bottom>originalHead.height;
     if(!shouldShow){
       overlay.style.display='none';
       return;
@@ -131,10 +111,12 @@
     const left=Math.max(0,sectionRect.left);
     const right=Math.min(window.innerWidth,sectionRect.right);
     const width=Math.max(0,right-left);
+
     overlay.style.left=left+'px';
     overlay.style.width=width+'px';
     overlay.style.display='block';
 
+    // 跟随原页面的横向滚动，不改变原表格本身。
     const scrollLeft=section.scrollLeft||0;
     headerTable.style.transform='translateX('+(-scrollLeft)+'px)';
   }
